@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "products",  # products app
     "cart",  # cart app
     "orders",  # orders app
+    "analytics",  # analytics app
     # "payments",  # payments app
     #####
     # third party packages
