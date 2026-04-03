@@ -7,9 +7,15 @@ from ninja import Redoc
 from ninja_extra import NinjaExtraAPI
 from ninja_jwt.controller import NinjaJWTDefaultController
 
+from analytics.controllers import (
+    CustomerAnalyticsController,
+    PerformanceMetricController,
+    ProductAnalyticsController,
+    SalesReportController,
+)
 from cart.controllers import CartController, CartItemController
 from core.controllers import AuthController, CustomerController, UserController
-from orders.controllers import OrderController
+from orders.controllers import DiscountController, OrderController
 from products.controllers import (
     AttributeController,
     BundleController,
@@ -66,6 +72,11 @@ api.register_controllers(
     CartController,
     CartItemController,
     OrderController,
+    DiscountController,
+    SalesReportController,
+    PerformanceMetricController,
+    ProductAnalyticsController,
+    CustomerAnalyticsController,
 )
 
 # Health check patterns

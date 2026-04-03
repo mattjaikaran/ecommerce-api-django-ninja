@@ -1,3 +1,4 @@
+from .discount_schema import DiscountCreateSchema, DiscountSchema, DiscountUpdateSchema
 from .fulfillment_schema import (
     FulfillmentCreateSchema,
     FulfillmentLineItemSchema,
@@ -49,4 +50,8 @@ __all__ = [
     OrderNoteCreateSchema,
     # History
     OrderHistorySchema,
+    # Discount
+    DiscountSchema,
+    DiscountCreateSchema,
+    DiscountUpdateSchema,
 ]

@@ -51,6 +51,14 @@ class ValidationError(BaseAPIException):
     status_code = 400
 
 
+class BadRequestError(BaseAPIException):
+    """Raised when a bad request is made."""
+
+    default_message = "Bad request"
+    default_code = "bad_request"
+    status_code = 400
+
+
 class AuthenticationError(BaseAPIException):
     """Raised when authentication fails."""
 
