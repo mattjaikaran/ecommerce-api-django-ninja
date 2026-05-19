@@ -112,16 +112,16 @@
 
 ### Core (Customer Models)
 
-- [x] Customer Model _(in Core app)_
+- [x] Customer Model
   - Extended user profile
   - Preferences and groups
-- [x] CustomerGroup Model _(in Core app)_
+- [x] CustomerGroup Model
   - Segmentation
   - Special pricing
-- [x] Address Model _(in Core app)_
+- [x] Address Model
   - Multiple addresses per user
   - Address validation
-- [x] CustomerFeedback Model _(in Core app)_
+- [x] CustomerFeedback Model
   - Customer feedback and ratings
 
 ### Orders (includes Tax, Discounts, Payments)
@@ -237,11 +237,11 @@
 - [x] Customer Controller
   - Profile management
   - Address management
-- [x] CustomerGroup Controller _(in Core app)_
+- [x] CustomerGroup Controller
   - Group management
   - Member assignments
 
-### Payments _(App exists but commented out)_
+### Payments
 
 - [x] Payment Controller
   - Payment processing
@@ -258,7 +258,7 @@
 - [x] Refund Controller
   - Refund processing
   - Status tracking
-- [x] Payment Controller _(Orders app has payment handling)_
+- [x] Payment Controller
   - Order payment processing
 - [x] Fulfillment Controller
   - Shipping management
@@ -435,3 +435,130 @@
 - **No Over-Engineering**: Customer, Tax, Shipping built into relevant apps rather than separate apps
 - **Production Ready**: Comprehensive caching, error handling, testing, and development tools
 - **Scalable**: Ready for ML integration and advanced features
+
+---
+
+## 🔥 Audit-Driven Backlog (Priority Order)
+
+### P1 — Critical (portfolio credibility blockers)
+
+- [ ] **Enable Payments app + wire Stripe webhooks**
+  - Uncomment payments app in `INSTALLED_APPS`
+  - Create migrations for payments models
+  - Add inbound Stripe webhook endpoint (`/webhooks/stripe/`)
+  - Handle key events: `payment_intent.succeeded`, `payment_intent.failed`, `charge.refunded`, `customer.subscription.*`
+  - Add webhook signature verification
+  - Write tests for webhook handlers
+
+- [ ] **Fix Analytics app (currently a ghost)**
+  - Create migrations for all analytics models
+  - Verify analytics is in `INSTALLED_APPS`
+  - Add `generate_analytics_data` management command
+  - Write tests for all analytics controllers (currently 0)
+  - Add analytics data aggregation Celery tasks
+
+- [ ] **Add Sentry error tracking**
+  - Add `sentry-sdk[django,celery]` dependency
+  - Configure in `api/settings/common.py` (gated by `SENTRY_DSN` env var)
+  - Add Sentry to Celery signal handlers
+  - Add `SENTRY_DSN` to `.env.example`
+  - Every other project in this portfolio has Sentry — this one needs it
+
+- [ ] **Add service layer to core apps**
+  - Create `services/` directory per app (core, products, orders, cart)
+  - Extract business logic out of controllers into service classes
+  - Follow `BaseService[T]` / `CRUDService[T]` pattern from boilerplate
+  - Controllers become thin HTTP adapters; services become testable units
+
+- [ ] **Coupon / promo code system**
+  - Add `Coupon` model (code, discount type, value, usage limit, expiry, min order value)
+  - Add `CouponUsage` model (track per-customer usage)
+  - `CouponController` with validate/apply/list/CRUD endpoints
+  - Integration with cart and order checkout flow
+  - Tests for all coupon validation logic
+
+### P2 — Medium (distinguish from tutorial projects)
+
+- [ ] **Structured logging (python-json-logger)**
+  - Add `python-json-logger` dependency
+  - Replace default Django logging config in `common.py` with JSON formatter for prod
+  - Add request ID middleware so logs are traceable per request
+  - Keep human-readable format for dev
+
+- [ ] **Celery tasks — actually implement them**
+  - `send_order_confirmation_email` task (orders app)
+  - `send_low_stock_alert` task (products app, triggered when inventory < threshold)
+  - `send_abandoned_cart_email` task (cart app, triggered N hours after cart inactivity)
+  - `aggregate_daily_analytics` task (analytics app, runs nightly via celery-beat)
+  - `process_refund` task (payments app, async refund via Stripe)
+
+- [ ] **Dead Letter Queue for Celery tasks**
+  - Add DLQ model to store failed task metadata
+  - Add management command to inspect/retry DLQ entries
+  - Add API endpoints: `GET /api/tasks/dlq/`, `POST /api/tasks/dlq/{id}/retry`
+  - Critical for payment-adjacent tasks where silent failure is unacceptable
+
+- [ ] **CI/CD deploy stage**
+  - Add Railway or Render deploy step to `.github/workflows/ci.yml`
+  - Deploy only on push to `main` after lint + test pass
+  - Add staging environment job
+  - Document deploy config in README
+
+- [ ] **Clean up duplicate management commands**
+  - Consolidate `generate_products.py`, `generate_product_data.py`, `generate_products_data.py` → single `generate_products.py`
+  - Audit all apps for similar redundancy
+  - Update `generate_all_data.py` references
+
+### P3 — Nice-to-have (separates solid from impressive)
+
+- [ ] **Webhook app (outbound webhooks)**
+  - `Webhook` model (endpoint URL, events subscribed, secret, active flag)
+  - `WebhookDelivery` model (request/response log, retry count)
+  - Celery task to deliver webhook events with retry + exponential backoff
+  - API to register/manage webhook endpoints
+  - Sign payloads with HMAC-SHA256
+
+- [ ] **OpenTelemetry observability (optional install group)**
+  - Add `opentelemetry-sdk`, `opentelemetry-instrumentation-django`, `opentelemetry-instrumentation-celery` as optional deps
+  - Add `core/observability/` module with trace spans and Prometheus metrics
+  - Gate behind `OTEL_ENABLED` env var so it's opt-in
+  - Export to Jaeger or OTLP endpoint
+
+- [ ] **Feature flags system**
+  - `FeatureFlag` model (name, enabled, rollout_percentage, variants)
+  - `FeatureFlagService` with `is_enabled(flag, user)` and `get_variant(flag, user)`
+  - Middleware to attach active flags to request context
+  - Admin CRUD + toggle endpoints
+  - Use for safe rollout of new checkout flow, new pricing logic, etc.
+
+- [ ] **Gift cards / store credit**
+  - `GiftCard` model (code, balance, issued_to, expires_at, status)
+  - `GiftCardTransaction` model (usage history)
+  - `GiftCardController` with issue/redeem/balance endpoints
+  - Integration with cart checkout flow
+
+- [ ] **Subscription management**
+  - `Subscription` model (plan, status, billing cycle, Stripe subscription ID)
+  - `SubscriptionPlan` model (name, price, interval, features)
+  - Wire to Stripe Billing API
+  - Handle `customer.subscription.updated/deleted` webhooks
+  - Upgrade/downgrade/cancel endpoints
+
+- [ ] **Rate limiting on auth endpoints**
+  - Add `django-ratelimit` or custom throttle decorator to login, OTP, password reset
+  - Brute force protection (lock account after N failed attempts)
+  - Track attempts in Redis with TTL
+
+- [ ] **API versioning**
+  - Add `/api/v1/` prefix to all routes
+  - Configure versioning in `api/urls.py`
+  - Document deprecation strategy
+
+### P4 — Future / ML
+
+- [ ] Recommendation engine (collaborative filtering or content-based)
+- [ ] A/B testing framework
+- [ ] pgvector for semantic product search
+- [ ] Inventory demand forecasting
+- [ ] Dynamic pricing rules engine
+- [ ] Marketplace / multi-vendor support

@@ -8,7 +8,7 @@ from .fulfillment_schema import (
     FulfillmentSchema,
     FulfillmentUpdateSchema,
 )
-from .history_schema import OrderHistorySchema
+from .order_history_schema import OrderHistorySchema
 from .note_schema import OrderNoteCreateSchema, OrderNoteSchema
 from .order_line_item_schema import (
     OrderLineItemCreateSchema,

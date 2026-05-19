@@ -30,6 +30,9 @@ env = environ.Env(
     REDIS_URL=(str, "redis://redis:6379/0"),
     CELERY_BROKER_URL=(str, "redis://redis:6379/0"),
     CELERY_RESULT_BACKEND=(str, "redis://redis:6379/0"),
+    STRIPE_SECRET_KEY=(str, ""),
+    STRIPE_WEBHOOK_SECRET=(str, ""),
+    STRIPE_PUBLISHABLE_KEY=(str, ""),
 )
 
 # Read .env file
@@ -72,7 +75,7 @@ INSTALLED_APPS = [
     "cart",  # cart app
     "orders",  # orders app
     "analytics",  # analytics app
-    # "payments",  # payments app
+    "payments",  # payments app
     #####
     # third party packages
     #####
@@ -253,12 +256,18 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_RESULT_BACKEND = "django-db"
 CELERY_CACHE_BACKEND = "django-cache"
 
+# Stripe
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET")
+STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY")
+
 # Task routing
 CELERY_TASK_ROUTES = {
     "core.tasks.*": {"queue": "core"},
     "products.tasks.*": {"queue": "products"},
     "orders.tasks.*": {"queue": "orders"},
     "cart.tasks.*": {"queue": "cart"},
+    "payments.tasks.*": {"queue": "payments"},
 }
 
 # Task result expires

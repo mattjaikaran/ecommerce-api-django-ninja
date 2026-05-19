@@ -16,6 +16,8 @@ from analytics.controllers import (
 from cart.controllers import CartController, CartItemController
 from core.controllers import AuthController, CustomerController, UserController
 from orders.controllers import DiscountController, OrderController
+from payments.controllers import PaymentController
+from payments.webhooks import stripe_webhook
 from products.controllers import (
     AttributeController,
     BundleController,
@@ -73,6 +75,7 @@ api.register_controllers(
     CartItemController,
     OrderController,
     DiscountController,
+    PaymentController,
     SalesReportController,
     PerformanceMetricController,
     ProductAnalyticsController,
@@ -94,6 +97,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     # API
     path("api/", api.urls),
+    # Stripe webhook (raw body required — outside of NinjaExtraAPI)
+    path("webhooks/stripe/", stripe_webhook, name="stripe-webhook"),
     # Health checks
     path("", include(health_patterns)),
     # Debug toolbar (development only)

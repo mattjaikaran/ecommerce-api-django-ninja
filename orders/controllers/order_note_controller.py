@@ -11,7 +11,7 @@ from ninja_extra import (
 from ninja_extra.permissions import IsAuthenticated
 
 from api.decorators import handle_exceptions, log_api_call
-from api.exceptions import NotFoundError, PermissionDeniedError
+from api.exceptions import APIPermissionError as PermissionDeniedError, NotFoundError
 from orders.models import (
     Order,
     OrderNote,

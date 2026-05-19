@@ -16,12 +16,12 @@ from django.http import HttpRequest
 
 from .config.constants import CACHE_TIMEOUT_MEDIUM, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from .exceptions import (
+    APIPermissionError,
     AuthenticationError,
     BaseAPIException,
     NotFoundError,
     ValidationError,
 )
-from .exceptions import PermissionError as APIPermissionError
 from .permissions import (
     IsAdminUser,
     can_modify_object,

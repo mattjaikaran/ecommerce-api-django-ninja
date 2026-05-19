@@ -15,7 +15,7 @@ from api.decorators import (
     update_endpoint,
 )
 from core.models import Customer
-from core.schemas.customer import (
+from core.schemas.customer_schema import (
     CustomerCreateSchema,
     CustomerSchema,
     CustomerUpdateSchema,

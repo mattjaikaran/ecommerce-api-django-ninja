@@ -8,7 +8,7 @@ from ninja_extra import api_controller, http_delete, http_get, http_post, http_p
 from ninja_extra.permissions import IsAuthenticated
 
 from api.decorators import handle_exceptions, log_api_call
-from api.exceptions import BadRequestError, PermissionDeniedError
+from api.exceptions import APIPermissionError as PermissionDeniedError, BadRequestError
 from products.models import Product, ProductReview
 from products.schemas import (
     ProductReviewCreateSchema,

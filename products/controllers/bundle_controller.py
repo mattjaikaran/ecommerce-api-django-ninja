@@ -10,7 +10,7 @@ from ninja_extra.permissions import IsAuthenticated
 from api.decorators import handle_exceptions, log_api_call
 
 from ..models import BundleItem, Product, ProductBundle
-from ..schemas.bundle import (
+from ..schemas.bundle_schema import (
     BundleCreateSchema,
     BundleItemCreateSchema,
     BundleItemSchema,

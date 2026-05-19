@@ -4,8 +4,6 @@ from django.db import models
 
 
 class PaymentStatus(models.TextChoices):
-    """Payment status choices."""
-
     PENDING = "pending", "Pending"
     AUTHORIZED = "authorized", "Authorized"
     PAID = "paid", "Paid"
@@ -18,10 +16,33 @@ class PaymentStatus(models.TextChoices):
 
 
 class PaymentGateway(models.TextChoices):
-    """Payment gateway choices."""
-
     STRIPE = "stripe", "Stripe"
-    BRAVE_PAY = "brave_pay", "Brave Pay"
     PAYPAL = "paypal", "PayPal"
-    CREDIT_CARD = "credit_card", "Credit Card"
-    DEBIT_CARD = "debit_card", "Debit Card"
+    MANUAL = "manual", "Manual"
+
+
+class PaymentMethodType(models.TextChoices):
+    CARD = "card", "Card"
+    BANK_TRANSFER = "bank_transfer", "Bank Transfer"
+    WALLET = "wallet", "Wallet"
+
+
+class RefundReason(models.TextChoices):
+    DUPLICATE = "duplicate", "Duplicate"
+    FRAUDULENT = "fraudulent", "Fraudulent"
+    REQUESTED_BY_CUSTOMER = "requested_by_customer", "Requested by Customer"
+    OTHER = "other", "Other"
+
+
+class RefundStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+    CANCELLED = "cancelled", "Cancelled"
+
+
+class WebhookEventStatus(models.TextChoices):
+    RECEIVED = "received", "Received"
+    PROCESSED = "processed", "Processed"
+    FAILED = "failed", "Failed"
+    IGNORED = "ignored", "Ignored"

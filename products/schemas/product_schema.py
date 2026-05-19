@@ -5,10 +5,10 @@ from uuid import UUID
 from ninja import Schema
 from pydantic import Field, validator
 
-from .collection import CollectionSchema
-from .product_option import ProductImageSchema, ProductVariantSchema
-from .review import ReviewSchema
-from .tag import TagSchema
+from .collection_schema import CollectionSchema
+from .product_option_schema import ProductImageSchema, ProductVariantSchema
+from .review_schema import ReviewSchema
+from .tag_schema import TagSchema
 
 
 class ProductSchema(Schema):

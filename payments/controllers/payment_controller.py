@@ -1,4 +1,4 @@
-"""Payment management controller with modern decorator-based approach."""
+"""Payment and refund management controller."""
 
 import logging
 from uuid import UUID
@@ -11,14 +11,14 @@ from api.decorators import (
     delete_endpoint,
     detail_endpoint,
     list_endpoint,
-    search_and_filter,
     update_endpoint,
 )
-from payments.models import PaymentMethod, PaymentTransaction
+from payments.models import PaymentMethod, PaymentRefund, PaymentTransaction
 from payments.schemas import (
     PaymentMethodCreateSchema,
     PaymentMethodSchema,
-    PaymentMethodUpdateSchema,
+    PaymentRefundCreateSchema,
+    PaymentRefundSchema,
     PaymentTransactionSchema,
 )
 
@@ -27,123 +27,76 @@ logger = logging.getLogger(__name__)
 
 @api_controller("/payments", tags=["Payments"])
 class PaymentController:
-    """Payment management controller with comprehensive decorators."""
 
     @http_get("/methods", response={200: list[PaymentMethodSchema]})
     @list_endpoint(
         select_related=["customer__user"],
-        search_fields=["type", "provider", "customer__user__username"],
-        filter_fields={
-            "type": "exact",
-            "provider": "exact",
-            "is_active": "boolean",
-            "customer_id": "exact",
-        },
-        ordering_fields=["created_at", "updated_at", "type", "provider"],
+        search_fields=["card_brand", "last_four", "provider"],
+        filter_fields={"provider": "exact", "is_default": "boolean", "is_active": "boolean"},
+        ordering_fields=["created_at", "provider", "is_default"],
     )
-    @search_and_filter(
-        search_fields=["type", "provider", "customer__user__username"],
-        filter_fields={
-            "type": "exact",
-            "provider": "exact",
-            "is_active": "boolean",
-        },
-        ordering_fields=["created_at", "type", "provider"],
-    )
-    def get_payment_methods(self, request):
-        """Get all payment methods with advanced filtering."""
-        return 200, PaymentMethod.objects.filter(is_active=True)
+    def list_payment_methods(self, request):
+        return 200, PaymentMethod.objects.filter(is_active=True, customer__user=request.user)
 
-    @http_get(
-        "/methods/{payment_method_id}", response={200: PaymentMethodSchema, 404: dict}
-    )
-    @detail_endpoint(
-        select_related=["customer__user"],
-        prefetch_related=["transactions"],
-    )
+    @http_get("/methods/{payment_method_id}", response={200: PaymentMethodSchema, 404: dict})
+    @detail_endpoint(select_related=["customer__user"])
     def get_payment_method(self, request, payment_method_id: UUID):
-        """Get a specific payment method by ID."""
-        payment_method = get_object_or_404(
-            PaymentMethod, id=payment_method_id, is_active=True
-        )
-        return 200, PaymentMethodSchema.from_orm(payment_method)
+        pm = get_object_or_404(PaymentMethod, id=payment_method_id, customer__user=request.user)
+        return 200, pm
 
     @http_post("/methods", response={201: PaymentMethodSchema, 400: dict})
     @create_endpoint()
     def create_payment_method(self, request, payload: PaymentMethodCreateSchema):
-        """Create a new payment method."""
-        payment_method = PaymentMethod.objects.create(
-            **payload.dict(),
-            created_by=request.user,
-            updated_by=request.user,
-        )
-        return 201, PaymentMethodSchema.from_orm(payment_method)
-
-    @http_put(
-        "/methods/{payment_method_id}",
-        response={200: PaymentMethodSchema, 400: dict, 404: dict},
-    )
-    @update_endpoint()
-    def update_payment_method(
-        self, request, payment_method_id: UUID, payload: PaymentMethodUpdateSchema
-    ):
-        """Update a payment method."""
-        payment_method = get_object_or_404(PaymentMethod, id=payment_method_id)
-
-        for field, value in payload.dict(exclude_unset=True).items():
-            setattr(payment_method, field, value)
-
-        payment_method.updated_by = request.user
-        payment_method.save()
-
-        return 200, PaymentMethodSchema.from_orm(payment_method)
+        from payments.services import PaymentService
+        pm = PaymentService.attach_payment_method(request.user, payload.stripe_payment_method_id, payload.is_default)
+        return 201, pm
 
     @http_delete("/methods/{payment_method_id}", response={204: None, 404: dict})
     @delete_endpoint()
     def delete_payment_method(self, request, payment_method_id: UUID):
-        """Soft delete a payment method."""
-        payment_method = get_object_or_404(PaymentMethod, id=payment_method_id)
-        payment_method.is_active = False
-        payment_method.deleted_by = request.user
-        payment_method.save()
+        pm = get_object_or_404(PaymentMethod, id=payment_method_id, customer__user=request.user)
+        pm.is_active = False
+        pm.deleted_by = request.user
+        pm.save(update_fields=["is_active", "deleted_by"])
         return 204, None
+
+    @http_put("/methods/{payment_method_id}/default", response={200: PaymentMethodSchema, 404: dict})
+    @update_endpoint()
+    def set_default_payment_method(self, request, payment_method_id: UUID):
+        pm = get_object_or_404(PaymentMethod, id=payment_method_id, customer__user=request.user)
+        PaymentMethod.objects.filter(customer__user=request.user).update(is_default=False)
+        pm.is_default = True
+        pm.save(update_fields=["is_default"])
+        return 200, pm
+
+    # Transactions (read-only for users)
 
     @http_get("/transactions", response={200: list[PaymentTransactionSchema]})
     @list_endpoint(
-        select_related=["payment_method__customer__user", "order"],
-        search_fields=[
-            "transaction_id",
-            "gateway_transaction_id",
-            "payment_method__customer__user__username",
-        ],
-        filter_fields={
-            "status": "exact",
-            "payment_method_id": "exact",
-            "order_id": "exact",
-            "gateway": "exact",
-        },
+        select_related=["order", "payment_method"],
+        filter_fields={"status": "exact", "gateway": "exact", "order_id": "exact"},
         ordering_fields=["created_at", "amount", "status"],
     )
-    @search_and_filter(
-        search_fields=["transaction_id", "gateway_transaction_id"],
-        filter_fields={
-            "status": "exact",
-            "gateway": "exact",
-        },
-        ordering_fields=["created_at", "amount", "status"],
-    )
-    def get_payment_transactions(self, request):
-        """Get all payment transactions with advanced filtering."""
-        return 200, PaymentTransaction.objects.all()
+    def list_transactions(self, request):
+        return 200, PaymentTransaction.objects.filter(order__customer__user=request.user)
 
-    @http_get(
-        "/transactions/{transaction_id}",
-        response={200: PaymentTransactionSchema, 404: dict},
-    )
-    @detail_endpoint(
-        select_related=["payment_method__customer__user", "order"],
-    )
-    def get_payment_transaction(self, request, transaction_id: UUID):
-        """Get a specific payment transaction by ID."""
-        transaction = get_object_or_404(PaymentTransaction, id=transaction_id)
-        return 200, PaymentTransactionSchema.from_orm(transaction)
+    @http_get("/transactions/{transaction_id}", response={200: PaymentTransactionSchema, 404: dict})
+    @detail_endpoint(select_related=["order", "payment_method"])
+    def get_transaction(self, request, transaction_id: UUID):
+        txn = get_object_or_404(PaymentTransaction, id=transaction_id, order__customer__user=request.user)
+        return 200, txn
+
+    # Refunds
+
+    @http_post("/transactions/{transaction_id}/refund", response={201: PaymentRefundSchema, 400: dict, 404: dict})
+    @create_endpoint()
+    def create_refund(self, request, transaction_id: UUID, payload: PaymentRefundCreateSchema):
+        from payments.services import PaymentService
+        txn = get_object_or_404(PaymentTransaction, id=transaction_id)
+        refund = PaymentService.create_refund(txn, payload.amount, payload.reason, payload.notes, request.user)
+        return 201, refund
+
+    @http_get("/transactions/{transaction_id}/refunds", response={200: list[PaymentRefundSchema]})
+    @list_endpoint(filter_fields={"status": "exact"}, ordering_fields=["created_at"])
+    def list_refunds(self, request, transaction_id: UUID):
+        return 200, PaymentRefund.objects.filter(transaction_id=transaction_id)

@@ -1,3 +1,5 @@
+"""Factories for PaymentMethod model."""
+
 import factory
 
 from core.tests.factories import UserFactory
@@ -5,41 +7,17 @@ from payments.models import PaymentMethod
 
 
 class PaymentMethodFactory(factory.django.DjangoModelFactory):
-    """Factory for creating PaymentMethod instances."""
-
     class Meta:
         model = PaymentMethod
 
-    name = factory.Faker("word")
-    description = factory.Faker("text", max_nb_chars=200)
-    credentials = factory.LazyFunction(dict)
+    type = "card"
+    provider = "stripe"
+    is_default = False
+    stripe_payment_method_id = factory.Sequence(lambda n: f"pm_test_{n:06d}")
+    stripe_customer_id = factory.Sequence(lambda n: f"cus_test_{n:06d}")
+    last_four = factory.Faker("numerify", text="####")
+    card_brand = factory.Iterator(["visa", "mastercard", "amex"])
+    expiry_month = factory.Faker("random_int", min=1, max=12)
+    expiry_year = factory.Faker("random_int", min=2025, max=2030)
     created_by = factory.SubFactory(UserFactory)
     updated_by = factory.SelfAttribute("created_by")
-
-
-class StripePaymentMethodFactory(PaymentMethodFactory):
-    """Factory for creating Stripe PaymentMethod instances."""
-
-    name = "Stripe"
-    description = "Stripe payment gateway"
-    credentials = factory.LazyFunction(
-        lambda: {
-            "publishable_key": "pk_test_example",
-            "secret_key": "sk_test_example",
-            "webhook_secret": "whsec_example",
-        }
-    )
-
-
-class PayPalPaymentMethodFactory(PaymentMethodFactory):
-    """Factory for creating PayPal PaymentMethod instances."""
-
-    name = "PayPal"
-    description = "PayPal payment gateway"
-    credentials = factory.LazyFunction(
-        lambda: {
-            "client_id": "example_client_id",
-            "client_secret": "example_client_secret",
-            "mode": "sandbox",
-        }
-    )

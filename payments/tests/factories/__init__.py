@@ -1,23 +1,17 @@
-"""Payments app test factories."""
+"""Payments test factories."""
 
-from .payment_method_factory import (
-    PaymentMethodFactory,
-    PayPalPaymentMethodFactory,
-    StripePaymentMethodFactory,
-)
+from .payment_method_factory import PaymentMethodFactory
 from .transaction_factory import (
     FailedTransactionFactory,
-    PendingTransactionFactory,
-    SuccessfulTransactionFactory,
-    TransactionFactory,
+    PaidTransactionFactory,
+    PaymentRefundFactory,
+    PaymentTransactionFactory,
 )
 
 __all__ = [
-    "PaymentMethodFactory",
-    "StripePaymentMethodFactory",
-    "PayPalPaymentMethodFactory",
-    "TransactionFactory",
-    "SuccessfulTransactionFactory",
     "FailedTransactionFactory",
-    "PendingTransactionFactory",
+    "PaidTransactionFactory",
+    "PaymentMethodFactory",
+    "PaymentRefundFactory",
+    "PaymentTransactionFactory",
 ]

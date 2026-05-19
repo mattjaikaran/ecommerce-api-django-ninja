@@ -1,5 +1,5 @@
+"""Payments controllers."""
+
 from .payment_controller import PaymentController
 
-all = [
-    PaymentController,
-]
+__all__ = ["PaymentController"]

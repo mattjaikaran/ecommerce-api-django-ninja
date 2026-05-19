@@ -10,7 +10,7 @@ from ninja_extra.permissions import IsAuthenticated
 from api.decorators import handle_exceptions, log_api_call
 
 from ..models import PriceAction, Product, ProductPriceHistory, ProductVariant
-from ..schemas.price import (
+from ..schemas.price_schema import (
     PriceAdjustmentResponseSchema,
     PriceAdjustmentSchema,
     PriceHistorySchema,

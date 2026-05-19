@@ -3,7 +3,7 @@ from uuid import UUID
 
 from ninja import Schema
 
-from .users import UserSchema
+from .user_schema import UserSchema
 
 
 class CustomerSchema(Schema):

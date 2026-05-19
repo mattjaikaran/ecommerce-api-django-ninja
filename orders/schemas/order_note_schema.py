@@ -1,17 +1,17 @@
 from datetime import datetime
+from uuid import UUID
 
 from ninja import Schema
 
-from .order import OrderSchema
-
 
 class OrderNoteSchema(Schema):
-    id: int
-    order: OrderSchema
+    id: UUID
+    order_id: UUID
     note: str
+    is_internal: bool = False
     created_at: datetime
-    updated_at: datetime
 
 
 class OrderNoteCreateSchema(Schema):
     note: str
+    is_internal: bool = False
