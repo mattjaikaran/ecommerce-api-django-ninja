@@ -3,10 +3,36 @@
 This module contains settings specific to the production environment.
 """
 
+import sentry_sdk
+from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
 from .common import *
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG", default=False)
+
+# Sentry — only initialise when DSN is configured
+_sentry_dsn = env("SENTRY_DSN", default="")
+if _sentry_dsn:
+    import logging
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=env("SENTRY_ENVIRONMENT", default="production"),
+        integrations=[
+            DjangoIntegration(transaction_style="url"),
+            CeleryIntegration(monitor_beat_tasks=True),
+            LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        traces_sample_rate=env("SENTRY_TRACES_SAMPLE_RATE", default=0.1),
+        profiles_sample_rate=env("SENTRY_PROFILES_SAMPLE_RATE", default=0.1),
+        send_default_pii=False,
+    )
 
 # Production allowed hosts
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=[])

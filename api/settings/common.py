@@ -33,6 +33,10 @@ env = environ.Env(
     STRIPE_SECRET_KEY=(str, ""),
     STRIPE_WEBHOOK_SECRET=(str, ""),
     STRIPE_PUBLISHABLE_KEY=(str, ""),
+    SENTRY_DSN=(str, ""),
+    SENTRY_ENVIRONMENT=(str, "production"),
+    SENTRY_TRACES_SAMPLE_RATE=(float, 0.1),
+    SENTRY_PROFILES_SAMPLE_RATE=(float, 0.1),
 )
 
 # Read .env file
