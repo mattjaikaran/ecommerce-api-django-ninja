@@ -37,10 +37,18 @@ class OrderService:
 
         subtotal = Decimal("0.00")
         for item in payload.items:
+            from products.models import ProductVariant
+            variant = ProductVariant.objects.get(id=item["product_variant_id"])
+            quantity = item["quantity"]
+            unit_price = variant.price
+            item_subtotal = unit_price * quantity
             order_item = OrderLineItem.objects.create(
                 order=order,
                 product_variant_id=item["product_variant_id"],
-                quantity=item["quantity"],
+                quantity=quantity,
+                unit_price=unit_price,
+                subtotal=item_subtotal,
+                total=item_subtotal,
                 created_by=request_user,
                 updated_by=request_user,
             )
@@ -70,10 +78,18 @@ class OrderService:
     @transaction.atomic
     def add_item(order: Order, payload: OrderLineItemCreateSchema, request_user) -> OrderLineItem:
         OrderService.assert_editable(order)
+        from products.models import ProductVariant
+        variant = ProductVariant.objects.get(id=payload.product_variant_id)
+        quantity = payload.quantity
+        unit_price = variant.price
+        item_subtotal = unit_price * quantity
         item = OrderLineItem.objects.create(
             order=order,
             product_variant_id=payload.product_variant_id,
-            quantity=payload.quantity,
+            quantity=quantity,
+            unit_price=unit_price,
+            subtotal=item_subtotal,
+            total=item_subtotal,
             created_by=request_user,
             updated_by=request_user,
         )
@@ -89,6 +105,8 @@ class OrderService:
         OrderService.assert_editable(order)
         old_total = item.total
         item.quantity = payload.quantity
+        item.subtotal = item.unit_price * payload.quantity
+        item.total = item.subtotal
         item.updated_by = request_user
         item.save()
         order.subtotal = order.subtotal - old_total + item.total
@@ -133,4 +151,6 @@ class OrderService:
     @staticmethod
     def delete_order(order: Order) -> None:
         OrderService.assert_editable(order)
-        order.delete()
+        order.is_deleted = True
+        order.is_active = False
+        order.save(update_fields=["is_deleted", "is_active"])

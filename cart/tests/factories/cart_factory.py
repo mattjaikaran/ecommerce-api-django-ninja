@@ -22,7 +22,7 @@ class CartFactory(factory.django.DjangoModelFactory):
         left_digits=3,
         right_digits=2,
         positive=True,
-        min_value=Decimal("0.00"),
+        min_value=Decimal("0.01"),
         max_value=Decimal("999.99"),
     )
     total_price = factory.LazyAttribute(lambda obj: obj.subtotal)

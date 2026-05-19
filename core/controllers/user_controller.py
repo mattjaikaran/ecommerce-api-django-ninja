@@ -19,6 +19,7 @@ from api.decorators import (
     search_and_filter,
     update_endpoint,
 )
+from api.exceptions import AuthenticationError as APIAuthenticationError
 from core.schemas import (
     UserLoginSchema,
     UserSchema,
@@ -36,7 +37,7 @@ User = get_user_model()
 class UserController:
     """User management controller with comprehensive decorators."""
 
-    @http_post("/signup", response={201: UserSchema, 400: dict})
+    @http_post("/signup", response={201: UserSchema, 400: dict, 401: dict, 403: dict})
     @throttle(RegisterRateThrottle)
     @create_endpoint(require_auth=False)
     def signup(self, request, data: UserSignupSchema):
@@ -68,15 +69,14 @@ class UserController:
         )
         return 201, UserSchema.from_orm(user)
 
-    @http_post("/login", response={200: dict, 400: dict})
+    @http_post("/login", response={200: dict, 400: dict, 401: dict, 403: dict})
     @throttle(LoginRateThrottle)
     @create_endpoint(require_auth=False)
     def login(self, request, data: UserLoginSchema):
         """Authenticate user and return tokens."""
         user = authenticate(username=data.username, password=data.password)
         if not user:
-            validation_error = ValidationError("Invalid credentials")
-            raise validation_error
+            raise APIAuthenticationError("Invalid credentials")
 
         # Generate token
         refresh = RefreshToken.for_user(user)
@@ -86,10 +86,9 @@ class UserController:
             "user": UserSchema.from_orm(user).dict(),
         }
 
-    @http_get("", response={200: list[UserSchema]})
+    @http_get("", response={200: list[UserSchema], 401: dict, 403: dict})
     @list_endpoint(
         require_admin=True,
-        select_related=["groups"],
         search_fields=["username", "email", "first_name", "last_name"],
         filter_fields={
             "is_staff": "boolean",
@@ -116,17 +115,20 @@ class UserController:
         """Get the current authenticated user."""
         return 200, UserSchema.from_orm(request.user)
 
-    @http_get("/{user_id}", response={200: UserSchema, 404: dict})
+    @http_get("/{user_id}", response={200: UserSchema, 404: dict, 401: dict, 403: dict})
     @detail_endpoint(
-        require_admin=True,
+        require_auth=True,
         select_related=["groups", "user_permissions"],
     )
     def get_user(self, request, user_id: UUID):
-        """Get a specific user by ID."""
+        """Get a specific user by ID. Users can access their own profile; admins can access any."""
+        if not request.user.is_staff and str(request.user.id) != str(user_id):
+            from api.exceptions import APIPermissionError
+            raise APIPermissionError("Permission denied")
         user = get_object_or_404(User, id=user_id)
         return 200, UserSchema.from_orm(user)
 
-    @http_put("/{user_id}", response={200: UserSchema, 400: dict, 404: dict})
+    @http_put("/{user_id}", response={200: UserSchema, 400: dict, 404: dict, 401: dict, 403: dict, 409: dict})
     @update_endpoint(require_admin=True)
     def update_user(self, request, user_id: UUID, payload: UserUpdateSchema):
         """Update a user's information."""
@@ -138,7 +140,7 @@ class UserController:
         user.save()
         return 200, UserSchema.from_orm(user)
 
-    @http_delete("/{user_id}", response={204: None, 404: dict})
+    @http_delete("/{user_id}", response={204: None, 404: dict, 401: dict, 403: dict})
     @delete_endpoint(require_admin=True)
     def delete_user(self, request, user_id: UUID):
         """Delete a user account."""
@@ -146,7 +148,7 @@ class UserController:
         user.delete()
         return 204, None
 
-    @http_get("/search", response={200: list[UserSchema]})
+    @http_get("/search", response={200: list[UserSchema], 401: dict, 403: dict})
     @list_endpoint(
         require_auth=True,
         cache_timeout=300,

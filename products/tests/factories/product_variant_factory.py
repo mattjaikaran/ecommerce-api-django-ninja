@@ -16,9 +16,7 @@ class ProductVariantFactory(factory.django.DjangoModelFactory):
 
     product = factory.SubFactory(ProductFactory)
     name = factory.Faker("word")
-    sku = factory.LazyAttribute(
-        lambda obj: f"{obj.product.name[:3].upper()}-{obj.name[:3].upper()}-{factory.Faker('random_int', min=1000, max=9999).generate()}"
-    )
+    sku = factory.Sequence(lambda n: f"SKU-{n:06d}")
     barcode = factory.Faker("ean13")
     price = factory.Faker(
         "pydecimal",

@@ -3,7 +3,21 @@
 This module contains settings specific to the development environment.
 """
 
+import sys
+
 from .common import *
+
+TESTING = "pytest" in sys.modules or any("pytest" in arg for arg in sys.argv)
+
+# Override session backend for tests — use DB to avoid Redis dependency
+# Also use dummy cache to prevent test cache poisoning across tests
+if TESTING:
+    SESSION_ENGINE = "django.contrib.sessions.backends.db"
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.dummy.DummyCache",
+        }
+    }
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env("DEBUG", default=True)
@@ -12,6 +26,10 @@ DEBUG = env("DEBUG", default=True)
 ALLOWED_HOSTS = env.list(
     "ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "0.0.0.0", "django"]
 )
+
+# Allow Django's test client host during tests
+if TESTING:
+    ALLOWED_HOSTS += ["testserver"]
 
 # CORS settings for development
 CORS_ALLOWED_ORIGINS = [
@@ -39,14 +57,17 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 
-# Add debug toolbar and extensions for development
-INSTALLED_APPS += [
-    "debug_toolbar",  # django-debug-toolbar for debugging
-    "django_extensions",  # django-extensions for additional development tools
-]
+# Add debug toolbar and extensions for development (skip during tests)
+if not TESTING:
+    INSTALLED_APPS += [
+        "debug_toolbar",  # django-debug-toolbar for debugging
+    ]
+    MIDDLEWARE += [
+        "debug_toolbar.middleware.DebugToolbarMiddleware",  # django-debug-toolbar
+    ]
 
-MIDDLEWARE += [
-    "debug_toolbar.middleware.DebugToolbarMiddleware",  # django-debug-toolbar
+INSTALLED_APPS += [
+    "django_extensions",  # django-extensions for additional development tools
 ]
 
 # Email backend for development (console)

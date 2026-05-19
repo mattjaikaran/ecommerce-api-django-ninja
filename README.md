@@ -4,7 +4,7 @@ E-Commerce API built with Django Ninja and Postgres
 
 ## Technologies
 
-- Python 3.12
+- Python 3.13
 - [uv](https://docs.astral.sh/uv/) - Fast Python package installer and resolver
 - [Django 5.2](https://docs.djangoproject.com/en/5.2/)
 - [Django Ninja](https://django-ninja.dev/)
@@ -282,6 +282,13 @@ pytest --cov=.
 
 - **Complete Ecommerce API** - Products, Cart, Orders, Customers, Payments with comprehensive features
 - **JWT Authentication** - Django Ninja JWT with refresh tokens
+- **Coupon & Promo Codes** - Flexible discount system with percentage/fixed amounts, usage limits, and expiry
+- **Gift Cards** - Purchasable and redeemable gift cards with balance tracking
+- **Subscriptions** - Recurring billing plans with Stripe Subscriptions integration
+- **Outbound Webhooks** - Event-driven webhook delivery to external systems with retry logic
+- **Feature Flags** - Runtime feature toggles for gradual rollouts and A/B testing
+- **Rate Limiting** - Per-endpoint and per-user rate limiting via Django Ratelimit
+- **OpenTelemetry** - Distributed tracing and metrics with OTLP export
 - **Advanced Caching** - Redis with versioning, warming, and management
 - **Modern Admin Panel** - Django Unfold admin interface
 - **Enhanced Searching** - Enhanced searching using django ninja extra search and filter functionality
@@ -466,6 +473,32 @@ Each app includes its own README with detailed information:
 - **[Cart App](cart/README.md)** - Shopping cart and session management
 - **[Orders App](orders/README.md)** - Order processing, payments, and fulfillment
 - **[Scripts](scripts/README.md)** - Development scripts and automation tools
+
+## Project Structure
+
+```
+ecommerce-api-update/
+├── api/                        # Django project config (settings, urls, wsgi)
+│   ├── config/                 # Environment-specific settings
+│   └── utils/                  # Shared utilities and decorators
+├── core/                       # Users, customers, addresses, auth, base models
+├── products/                   # Product catalog, variants, categories, inventory
+├── cart/                       # Shopping cart and session management
+├── orders/                     # Order processing, line items, fulfillment
+├── payments/                   # Stripe integration, payment records, webhooks
+├── coupons/                    # Promo codes, discount rules, usage tracking
+├── gift_cards/                 # Gift card issuance, redemption, balance ledger
+├── subscriptions/              # Recurring plans, Stripe Subscriptions, billing
+├── outbound_webhooks/          # Event delivery to external endpoints, retry DLQ
+├── feature_flags/              # Runtime feature toggles, rollout rules
+├── analytics/                  # Event tracking, reporting aggregates
+├── scripts/                    # Developer shell scripts (setup, test, health)
+├── docs/                       # Architecture, system design, user journeys
+├── docker-compose.yml          # Development stack
+├── docker-compose.prod.yml     # Production stack
+├── pyproject.toml              # Dependencies and tool config (uv / ruff)
+└── Makefile                    # Common development commands
+```
 
 ## Database
 

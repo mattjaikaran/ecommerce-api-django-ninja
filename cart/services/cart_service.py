@@ -24,11 +24,18 @@ class CartService:
 
     @staticmethod
     def create_cart(payload: CartCreateSchema, user) -> Cart:
-        return Cart.objects.create(
-            **payload.dict(),
-            created_by=user if user.is_authenticated else None,
-            updated_by=user if user.is_authenticated else None,
-        )
+        # Note: AbstractBaseModel.created_by is non-null. For anonymous carts,
+        # a user must still be provided (e.g. a guest user record). The
+        # created_by/updated_by are only set when the user is authenticated.
+        create_kwargs = payload.dict()
+        if user.is_authenticated:
+            create_kwargs["created_by"] = user
+            create_kwargs["updated_by"] = user
+        else:
+            # Anonymous carts require a system/guest user for created_by.
+            # This path is only reachable if Cart.created_by is made nullable.
+            pass
+        return Cart.objects.create(**create_kwargs)
 
     @staticmethod
     @transaction.atomic
@@ -41,9 +48,13 @@ class CartService:
             existing.save()
             cart_item = existing
         else:
+            from products.models import ProductVariant
+            variant = ProductVariant.objects.get(id=payload.product_variant_id)
             cart_item = CartItem.objects.create(
                 cart=cart,
-                **payload.dict(),
+                product_variant_id=payload.product_variant_id,
+                quantity=payload.quantity,
+                price=variant.price,
                 created_by=user if user.is_authenticated else None,
                 updated_by=user if user.is_authenticated else None,
             )

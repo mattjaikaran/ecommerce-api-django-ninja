@@ -136,12 +136,17 @@ graph LR
         CART[Cart Domain]
         PAYMENTS[Payments Domain]
         INVENTORY[Inventory Domain]
+        COUPONS[Coupons Domain]
+        GIFT_CARDS[Gift Cards Domain]
+        SUBSCRIPTIONS[Subscriptions Domain]
     end
 
     subgraph "Generic Domains"
         AUTH[Authentication]
         NOTIFICATIONS[Notifications]
         ANALYTICS[Analytics]
+        WEBHOOKS[Outbound Webhooks]
+        FLAGS[Feature Flags]
     end
 
     PRODUCTS --> CART
@@ -149,10 +154,16 @@ graph LR
     CUSTOMERS --> ORDERS
     ORDERS --> PAYMENTS
     PRODUCTS --> INVENTORY
+    COUPONS --> ORDERS
+    GIFT_CARDS --> ORDERS
+    SUBSCRIPTIONS --> PAYMENTS
 
     AUTH --> CUSTOMERS
     ORDERS --> NOTIFICATIONS
     ORDERS --> ANALYTICS
+    ORDERS --> WEBHOOKS
+    FLAGS --> PRODUCTS
+    FLAGS --> PAYMENTS
 ```
 
 ## 🧩 Core Components
@@ -170,6 +181,12 @@ graph TB
             CART[cart/ - Shopping Cart]
             ORDERS[orders/ - Order Management]
             PAYMENTS[payments/ - Payment Processing]
+            COUPONS[coupons/ - Promo Codes]
+            GIFT_CARDS[gift_cards/ - Gift Cards]
+            SUBSCRIPTIONS[subscriptions/ - Recurring Billing]
+            WEBHOOKS[outbound_webhooks/ - Event Delivery]
+            FLAGS[feature_flags/ - Feature Toggles]
+            ANALYTICS[analytics/ - Event Tracking]
         end
 
         subgraph "Supporting Components"
@@ -184,6 +201,12 @@ graph TB
     API --> CART
     API --> ORDERS
     API --> PAYMENTS
+    API --> COUPONS
+    API --> GIFT_CARDS
+    API --> SUBSCRIPTIONS
+    API --> WEBHOOKS
+    API --> FLAGS
+    API --> ANALYTICS
 
     API --> UTILS
     API --> CONFIG
@@ -193,6 +216,8 @@ graph TB
     CART --> UTILS
     ORDERS --> UTILS
     PAYMENTS --> UTILS
+    COUPONS --> UTILS
+    SUBSCRIPTIONS --> UTILS
 ```
 
 ### Model Architecture
@@ -330,6 +355,12 @@ graph TB
         ORDERS[/api/v1/orders/]
         CUSTOMERS[/api/v1/customers/]
         PAYMENTS[/api/v1/payments/]
+        COUPONS[/api/v1/coupons/]
+        GIFT_CARDS[/api/v1/gift-cards/]
+        SUBSCRIPTIONS[/api/v1/subscriptions/]
+        WEBHOOKS[/api/v1/webhooks/]
+        FLAGS[/api/v1/feature-flags/]
+        ANALYTICS[/api/v1/analytics/]
     end
 
     subgraph "HTTP Methods"
@@ -363,6 +394,31 @@ graph TB
     ORDERS --> GET
     ORDERS --> POST
     ORDERS --> PATCH
+
+    COUPONS --> GET
+    COUPONS --> POST
+    COUPONS --> PATCH
+    COUPONS --> DELETE
+
+    GIFT_CARDS --> GET
+    GIFT_CARDS --> POST
+    GIFT_CARDS --> PATCH
+
+    SUBSCRIPTIONS --> GET
+    SUBSCRIPTIONS --> POST
+    SUBSCRIPTIONS --> PATCH
+    SUBSCRIPTIONS --> DELETE
+
+    WEBHOOKS --> GET
+    WEBHOOKS --> POST
+    WEBHOOKS --> DELETE
+
+    FLAGS --> GET
+    FLAGS --> POST
+    FLAGS --> PATCH
+    FLAGS --> DELETE
+
+    ANALYTICS --> GET
 
     GET --> JSON
     POST --> JSON
@@ -758,5 +814,165 @@ graph TB
     PROMETHEUS --> GRAFANA
     PROMETHEUS --> ALERTMANAGER
 ```
+
+## 🧱 Service Layer Pattern
+
+Controllers are kept thin. Domain logic lives in dedicated service classes that sit between the HTTP controller and the Django ORM.
+
+### Key Service Classes
+
+| Service | Module | Responsibility |
+|---|---|---|
+| `OrderService` | `orders/services.py` | Create orders, apply discounts, update status |
+| `CartService` | `cart/services.py` | Add/remove items, recalculate totals, merge carts |
+| `CouponService` | `coupons/services.py` | Validate and redeem promo codes |
+| `GiftCardService` | `gift_cards/services.py` | Issue, redeem, and track gift card balances |
+| `SubscriptionService` | `subscriptions/services.py` | Create and manage Stripe Subscription lifecycle |
+| `WebhookService` | `outbound_webhooks/services.py` | Dispatch events and manage delivery retries |
+
+### Service Layer Flow
+
+```mermaid
+graph LR
+    subgraph "HTTP Layer"
+        CTRL[Controller]
+    end
+
+    subgraph "Service Layer"
+        ORDER_SVC[OrderService]
+        CART_SVC[CartService]
+        COUPON_SVC[CouponService]
+        GIFT_SVC[GiftCardService]
+        SUB_SVC[SubscriptionService]
+        WH_SVC[WebhookService]
+    end
+
+    subgraph "Data Layer"
+        ORM[Django ORM / Models]
+        CELERY[Celery Tasks]
+        STRIPE[Stripe API]
+    end
+
+    CTRL --> ORDER_SVC
+    CTRL --> CART_SVC
+    ORDER_SVC --> COUPON_SVC
+    ORDER_SVC --> GIFT_SVC
+    ORDER_SVC --> WH_SVC
+    SUB_SVC --> STRIPE
+
+    ORDER_SVC --> ORM
+    CART_SVC --> ORM
+    WH_SVC --> CELERY
+```
+
+### Controller Decorator Pattern
+
+Controllers use a composable decorator stack for cross-cutting concerns:
+
+```python
+@api_controller("/orders", tags=["Orders"])
+class OrderController:
+    @http_post("", response={201: OrderSchema})
+    @handle_exceptions()        # structured error responses
+    @log_api_call()             # request/response logging
+    @require_authentication()   # JWT guard
+    def create_order(self, request, payload: CreateOrderSchema):
+        return 201, OrderService.create(request.user, payload)
+```
+
+Available decorators (defined in `api/utils/`):
+
+- `@handle_exceptions()` — catches exceptions and returns structured HTTP errors
+- `@log_api_call()` — logs request metadata and response status
+- `@cached_response()` — Redis cache with configurable TTL and namespace
+- `@paginate_response()` — standardised paginated list responses
+- `@require_authentication()` — enforces valid JWT
+- `@require_admin()` — restricts to staff/superuser roles
+
+## ⚙️ Background Task Architecture
+
+Long-running and side-effect work is offloaded to Celery workers via Redis as the broker.
+
+### Task Categories
+
+```mermaid
+graph TB
+    subgraph "Trigger Sources"
+        API_CALL[API Request]
+        BEAT[Celery Beat Schedule]
+        WEBHOOK_IN[Inbound Stripe Webhook]
+    end
+
+    subgraph "Task Queues"
+        DEFAULT[default queue]
+        HIGH[high-priority queue]
+        DLQ[dead-letter queue]
+    end
+
+    subgraph "Task Types"
+        EMAIL[send_order_confirmation]
+        INVENTORY[update_inventory_levels]
+        WEBHOOK_OUT[deliver_outbound_webhook]
+        ANALYTICS_EVT[record_analytics_event]
+        SUB_RENEWAL[process_subscription_renewal]
+        RETRY[retry_failed_webhook]
+    end
+
+    subgraph "Outcomes"
+        SUCCESS[Task Success → ack]
+        FAILURE[Max Retries Exceeded → DLQ]
+        ALERT[DLQ Monitor → Alert]
+    end
+
+    API_CALL --> DEFAULT
+    BEAT --> DEFAULT
+    WEBHOOK_IN --> HIGH
+
+    DEFAULT --> EMAIL
+    DEFAULT --> INVENTORY
+    DEFAULT --> WEBHOOK_OUT
+    DEFAULT --> ANALYTICS_EVT
+    HIGH --> SUB_RENEWAL
+    DLQ --> RETRY
+
+    EMAIL --> SUCCESS
+    WEBHOOK_OUT --> SUCCESS
+    WEBHOOK_OUT --> FAILURE
+    FAILURE --> DLQ
+    DLQ --> ALERT
+```
+
+### Dead-Letter Queue (DLQ) Pattern
+
+Tasks that exceed their retry budget are routed to the `dead-letter` queue rather than silently dropped. A separate Celery Beat job polls the DLQ, emits a structured log entry (picked up by the OpenTelemetry collector), and optionally requeues after manual inspection.
+
+```python
+# Outbound webhook delivery with DLQ fallback
+@shared_task(
+    bind=True,
+    max_retries=5,
+    default_retry_delay=60,
+    queue="default",
+)
+def deliver_outbound_webhook(self, webhook_id: str) -> None:
+    try:
+        WebhookService.deliver(webhook_id)
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            deliver_outbound_webhook.apply_async(
+                args=[webhook_id], queue="dead-letter"
+            )
+            return
+        raise self.retry(exc=exc)
+```
+
+### Celery Beat Scheduled Tasks
+
+| Task | Schedule | Purpose |
+|---|---|---|
+| `process_subscription_renewals` | Every hour | Trigger due subscription charges |
+| `expire_gift_cards` | Daily | Mark expired gift cards inactive |
+| `flush_analytics_buffer` | Every 5 min | Write buffered events to DB |
+| `poll_dlq` | Every 15 min | Alert on dead-letter accumulation |
 
 This architecture documentation provides a comprehensive overview of the Django Ecommerce API system design, ensuring scalability, maintainability, and performance for a modern e-commerce platform.

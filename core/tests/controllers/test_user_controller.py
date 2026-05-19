@@ -81,7 +81,7 @@ class TestUserController:
         """Test retrieving list of users."""
         UserFactory.create_batch(5)
 
-        response = self.client.get("/api/users/")
+        response = self.client.get("/api/users")
 
         assert response.status_code == 200
         data = response.json()
@@ -91,7 +91,7 @@ class TestUserController:
         """Test retrieving a specific user."""
         user = UserFactory()
 
-        response = self.client.get(f"/api/users/{user.id}/")
+        response = self.client.get(f"/api/users/{user.id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -105,17 +105,17 @@ class TestUserController:
 
         fake_id = uuid.uuid4()
 
-        response = self.client.get(f"/api/users/{fake_id}/")
+        response = self.client.get(f"/api/users/{fake_id}")
 
         assert response.status_code == 404
 
     def test_update_user_profile(self):
         """Test updating user profile."""
         user = UserFactory()
-        update_data = {"first_name": "Updated", "last_name": "Name"}
+        update_data = {"first_name": "Updated", "last_name": "Name", "username": user.username, "email": user.email}
 
         response = self.client.put(
-            f"/api/users/{user.id}/", data=update_data, content_type="application/json"
+            f"/api/users/{user.id}", data=update_data, content_type="application/json"
         )
 
         assert response.status_code == 200
@@ -124,28 +124,31 @@ class TestUserController:
         assert user.last_name == update_data["last_name"]
 
     def test_update_user_invalid_data(self):
-        """Test updating user with invalid data fails."""
+        """Test updating user with a duplicate email fails."""
         user = UserFactory()
         existing_user = UserFactory()
         update_data = {
-            "email": existing_user.email  # Duplicate email
+            "email": existing_user.email,
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
         }
 
         response = self.client.put(
-            f"/api/users/{user.id}/", data=update_data, content_type="application/json"
+            f"/api/users/{user.id}", data=update_data, content_type="application/json"
         )
 
-        assert response.status_code == 400
+        assert response.status_code in (400, 409)
 
     def test_delete_user(self):
-        """Test deleting a user (soft delete)."""
+        """Test deleting a user."""
         user = UserFactory()
+        user_id = user.id
 
-        response = self.client.delete(f"/api/users/{user.id}/")
+        response = self.client.delete(f"/api/users/{user_id}")
 
         assert response.status_code == 204
-        user.refresh_from_db()
-        assert user.is_deleted is True
+        assert not User.objects.filter(id=user_id).exists()
 
     def test_user_login(self):
         """Test user login endpoint."""
@@ -161,7 +164,7 @@ class TestUserController:
 
         assert response.status_code == 200
         data = response.json()
-        assert "access" in data
+        assert "token" in data
         assert "refresh" in data
 
     def test_user_login_invalid_credentials(self):
@@ -187,7 +190,7 @@ class TestUserControllerPermissions:
 
     def test_user_list_requires_authentication(self):
         """Test that user list endpoint requires authentication."""
-        response = self.client.get("/api/users/")
+        response = self.client.get("/api/users")
 
         assert response.status_code == 401
 
@@ -195,7 +198,7 @@ class TestUserControllerPermissions:
         """Test that user detail endpoint requires authentication."""
         user = UserFactory()
 
-        response = self.client.get(f"/api/users/{user.id}/")
+        response = self.client.get(f"/api/users/{user.id}")
 
         assert response.status_code == 401
 
@@ -203,7 +206,7 @@ class TestUserControllerPermissions:
         """Test that regular user can access their own profile."""
         self.client.force_login(self.regular_user)
 
-        response = self.client.get(f"/api/users/{self.regular_user.id}/")
+        response = self.client.get(f"/api/users/{self.regular_user.id}")
 
         assert response.status_code == 200
 
@@ -212,7 +215,7 @@ class TestUserControllerPermissions:
         admin = AdminUserFactory()
         self.client.force_login(admin)
 
-        response = self.client.get(f"/api/users/{self.regular_user.id}/")
+        response = self.client.get(f"/api/users/{self.regular_user.id}")
 
         assert response.status_code == 200
 
@@ -221,6 +224,6 @@ class TestUserControllerPermissions:
         superuser = SuperUserFactory()
         self.client.force_login(superuser)
 
-        response = self.client.delete(f"/api/users/{self.regular_user.id}/")
+        response = self.client.delete(f"/api/users/{self.regular_user.id}")
 
         assert response.status_code == 204

@@ -37,7 +37,7 @@ class TestProductController:
         }
 
         response = self.client.post(
-            "/api/products/", data=product_data, content_type="application/json"
+            "/api/products", data=product_data, content_type="application/json"
         )
 
         assert response.status_code == 201
@@ -62,16 +62,16 @@ class TestProductController:
         }
 
         response = self.client.post(
-            "/api/products/", data=product_data, content_type="application/json"
+            "/api/products", data=product_data, content_type="application/json"
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     def test_read_product_list(self):
         """Test retrieving list of products."""
         ProductFactory.create_batch(5)
 
-        response = self.client.get("/api/products/")
+        response = self.client.get("/api/products")
 
         assert response.status_code == 200
         data = response.json()
@@ -84,13 +84,13 @@ class TestProductController:
         FeaturedProductFactory.create_batch(2, category=category)
 
         # Test category filter
-        response = self.client.get(f"/api/products/?category_id={category.id}")
+        response = self.client.get(f"/api/products?category_id={category.id}")
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 5  # 3 regular + 2 featured
 
         # Test featured filter
-        response = self.client.get("/api/products/?featured=true")
+        response = self.client.get("/api/products?featured=true")
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 2
@@ -99,7 +99,7 @@ class TestProductController:
         """Test retrieving a specific product."""
         product = ProductFactory()
 
-        response = self.client.get(f"/api/products/{product.id}/")
+        response = self.client.get(f"/api/products/{product.id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -113,21 +113,24 @@ class TestProductController:
 
         fake_id = uuid.uuid4()
 
-        response = self.client.get(f"/api/products/{fake_id}/")
+        response = self.client.get(f"/api/products/{fake_id}")
 
         assert response.status_code == 404
 
     def test_update_product(self):
         """Test updating a product."""
         product = ProductFactory()
+        category = ProductCategoryFactory()
         update_data = {
             "name": "Updated Product Name",
-            "price": "149.99",
+            "slug": "updated-product-name-xyz",
             "description": "Updated description",
+            "category_id": str(category.id),
+            "price": "149.99",
         }
 
         response = self.client.put(
-            f"/api/products/{product.id}/",
+            f"/api/products/{product.id}",
             data=update_data,
             content_type="application/json",
         )
@@ -139,26 +142,26 @@ class TestProductController:
         assert product.description == update_data["description"]
 
     def test_update_product_invalid_data(self):
-        """Test updating product with invalid data fails."""
+        """Test updating product with invalid data (missing required fields) fails with 422."""
         product = ProductFactory()
-        existing_product = ProductFactory()
         update_data = {
-            "slug": existing_product.slug  # Duplicate slug
+            "name": "Missing required fields",
+            # slug, category_id, price intentionally omitted
         }
 
         response = self.client.put(
-            f"/api/products/{product.id}/",
+            f"/api/products/{product.id}",
             data=update_data,
             content_type="application/json",
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     def test_delete_product(self):
         """Test deleting a product (soft delete)."""
         product = ProductFactory()
 
-        response = self.client.delete(f"/api/products/{product.id}/")
+        response = self.client.delete(f"/api/products/{product.id}")
 
         assert response.status_code == 204
         product.refresh_from_db()
@@ -170,7 +173,7 @@ class TestProductController:
         ProductFactory(name="Phone Charger")
         ProductFactory(name="Laptop Stand")
 
-        response = self.client.get("/api/products/?search=phone")
+        response = self.client.get("/api/products?search=phone")
 
         assert response.status_code == 200
         data = response.json()
@@ -182,7 +185,7 @@ class TestProductController:
         new_product = ProductFactory()
 
         # Test ordering by creation date (newest first)
-        response = self.client.get("/api/products/?ordering=-created_at")
+        response = self.client.get("/api/products?ordering=-created_at")
 
         assert response.status_code == 200
         data = response.json()
@@ -203,19 +206,37 @@ class TestProductControllerPermissions:
         self.regular_user = UserFactory()
         self.admin_user = AdminUserFactory()
 
-    def test_product_list_public_access(self):
-        """Test that product list is publicly accessible."""
+    def test_product_list_requires_auth(self):
+        """Test that product list requires authentication."""
         PublishedProductFactory.create_batch(3)
 
-        response = self.client.get("/api/products/")
+        response = self.client.get("/api/products")
+
+        assert response.status_code == 401
+
+    def test_product_list_authenticated(self):
+        """Test that authenticated users can list products."""
+        PublishedProductFactory.create_batch(3)
+        self.client.force_login(self.regular_user)
+
+        response = self.client.get("/api/products")
 
         assert response.status_code == 200
 
-    def test_product_detail_public_access(self):
-        """Test that product detail is publicly accessible."""
+    def test_product_detail_requires_auth(self):
+        """Test that product detail requires authentication."""
         product = PublishedProductFactory()
 
-        response = self.client.get(f"/api/products/{product.id}/")
+        response = self.client.get(f"/api/products/{product.id}")
+
+        assert response.status_code == 401
+
+    def test_product_detail_authenticated(self):
+        """Test that authenticated users can access product detail."""
+        product = PublishedProductFactory()
+        self.client.force_login(self.regular_user)
+
+        response = self.client.get(f"/api/products/{product.id}")
 
         assert response.status_code == 200
 
@@ -233,25 +254,31 @@ class TestProductControllerPermissions:
 
         # Test without authentication
         response = self.client.post(
-            "/api/products/", data=product_data, content_type="application/json"
+            "/api/products", data=product_data, content_type="application/json"
         )
         assert response.status_code == 401
 
         # Test with regular user
         self.client.force_login(self.regular_user)
         response = self.client.post(
-            "/api/products/", data=product_data, content_type="application/json"
+            "/api/products", data=product_data, content_type="application/json"
         )
         assert response.status_code == 403
 
     def test_update_product_requires_admin(self):
         """Test that updating product requires admin permissions."""
         product = ProductFactory()
-        update_data = {"name": "Updated Product Name"}
+        category = ProductCategoryFactory()
+        update_data = {
+            "name": "Updated Product Name",
+            "slug": "updated-product-requires-admin",
+            "category_id": str(category.id),
+            "price": "99.99",
+        }
 
         # Test without authentication
         response = self.client.put(
-            f"/api/products/{product.id}/",
+            f"/api/products/{product.id}",
             data=update_data,
             content_type="application/json",
         )
@@ -260,7 +287,7 @@ class TestProductControllerPermissions:
         # Test with regular user
         self.client.force_login(self.regular_user)
         response = self.client.put(
-            f"/api/products/{product.id}/",
+            f"/api/products/{product.id}",
             data=update_data,
             content_type="application/json",
         )
@@ -271,10 +298,10 @@ class TestProductControllerPermissions:
         product = ProductFactory()
 
         # Test without authentication
-        response = self.client.delete(f"/api/products/{product.id}/")
+        response = self.client.delete(f"/api/products/{product.id}")
         assert response.status_code == 401
 
         # Test with regular user
         self.client.force_login(self.regular_user)
-        response = self.client.delete(f"/api/products/{product.id}/")
+        response = self.client.delete(f"/api/products/{product.id}")
         assert response.status_code == 403

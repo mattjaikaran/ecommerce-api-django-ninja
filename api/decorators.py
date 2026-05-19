@@ -10,9 +10,10 @@ import time
 from collections.abc import Callable
 
 from django.core.cache import cache
-from django.db import models
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, models
 from django.db.models import Q, QuerySet
-from django.http import HttpRequest
+from django.http import Http404, HttpRequest
 
 from .config.constants import CACHE_TIMEOUT_MEDIUM, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from .exceptions import (
@@ -50,12 +51,23 @@ def handle_exceptions(func: Callable) -> Callable:
         except BaseAPIException as e:
             logger.warning("API Exception in %s: %s", func.__name__, e.message)
             return e.status_code, e.to_dict()
-        except models.ObjectDoesNotExist:
+        except (models.ObjectDoesNotExist, Http404):
             error = NotFoundError("Resource not found")
+            return error.status_code, error.to_dict()
+        except IntegrityError as e:
+            logger.warning("Integrity error in %s: %s", func.__name__, e)
+            from .exceptions import ConflictError
+            error = ConflictError("A resource with that value already exists")
             return error.status_code, error.to_dict()
         except ValidationError as e:
             logger.warning("Validation error in %s: %s", func.__name__, e)
             return e.status_code, e.to_dict()
+        except DjangoValidationError as e:
+            logger.warning("Django validation error in %s: %s", func.__name__, e)
+            msgs = list(e.messages) if hasattr(e, "messages") else [str(e)]
+            from .exceptions import ValidationError as APIValidationError
+            api_err = APIValidationError(msgs[0] if msgs else "Validation error")
+            return api_err.status_code, api_err.to_dict()
         except Exception:
             logger.exception("Unhandled exception in %s", func.__name__)
             error = BaseAPIException("An internal error occurred")
@@ -82,15 +94,16 @@ def log_api_call(
         def wrapper(*args, **kwargs):
             start_time = time.time()
 
-            # Extract request info
-            request = None
-            for arg in args:
-                if hasattr(arg, "META") and hasattr(arg, "method"):
-                    request = arg
-                    break
-                if hasattr(arg, "request"):
-                    request = arg.request
-                    break
+            # Extract request info — check kwargs first (Ninja Extra passes request as kwarg)
+            request = kwargs.get("request")
+            if request is None:
+                for arg in args:
+                    if hasattr(arg, "META") and hasattr(arg, "method"):
+                        request = arg
+                        break
+                    if hasattr(arg, "request"):
+                        request = arg.request
+                        break
 
             # Log request
             if request:
@@ -140,15 +153,16 @@ def require_authentication(func: Callable) -> Callable:
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Find request object
-        request = None
-        for arg in args:
-            if hasattr(arg, "user") and hasattr(arg, "META"):
-                request = arg
-                break
-            if hasattr(arg, "request"):
-                request = arg.request
-                break
+        # Find request object — check kwargs first (Ninja Extra passes request as kwarg)
+        request = kwargs.get("request")
+        if request is None:
+            for arg in args:
+                if hasattr(arg, "user") and hasattr(arg, "META"):
+                    request = arg
+                    break
+                if hasattr(arg, "request"):
+                    request = arg.request
+                    break
 
         if not request or not request.user or not request.user.is_authenticated:
             auth_error = AuthenticationError("Authentication required")
@@ -170,15 +184,16 @@ def require_permissions(*permission_classes) -> Callable:
         @functools.wraps(func)
         @require_authentication
         def wrapper(*args, **kwargs):
-            # Find request object
-            request = None
-            for arg in args:
-                if hasattr(arg, "user") and hasattr(arg, "META"):
-                    request = arg
-                    break
-                if hasattr(arg, "request"):
-                    request = arg.request
-                    break
+            # Find request object — check kwargs first (Ninja Extra passes request as kwarg)
+            request = kwargs.get("request")
+            if request is None:
+                for arg in args:
+                    if hasattr(arg, "user") and hasattr(arg, "META"):
+                        request = arg
+                        break
+                    if hasattr(arg, "request"):
+                        request = arg.request
+                        break
 
             if not request:
                 perm_error = APIPermissionError("Request object not found")
@@ -216,15 +231,16 @@ def require_owner_or_admin(obj_param: str = "obj") -> Callable:
         @functools.wraps(func)
         @require_authentication
         def wrapper(*args, **kwargs):
-            # Find request object
-            request = None
-            for arg in args:
-                if hasattr(arg, "user") and hasattr(arg, "META"):
-                    request = arg
-                    break
-                if hasattr(arg, "request"):
-                    request = arg.request
-                    break
+            # Find request object — check kwargs first (Ninja Extra passes request as kwarg)
+            request = kwargs.get("request")
+            if request is None:
+                for arg in args:
+                    if hasattr(arg, "user") and hasattr(arg, "META"):
+                        request = arg
+                        break
+                    if hasattr(arg, "request"):
+                        request = arg.request
+                        break
 
             if not request:
                 perm_error = APIPermissionError("Request object not found")
@@ -324,14 +340,16 @@ def cached_response(
             cache_key_parts = [key_prefix, func.__name__]
 
             if vary_on_user:
-                request = None
-                for arg in args:
-                    if hasattr(arg, "user"):
-                        request = arg
-                        break
-                    if hasattr(arg, "request"):
-                        request = arg.request
-                        break
+                # Check kwargs first (Ninja Extra passes request as kwarg)
+                request = kwargs.get("request")
+                if request is None:
+                    for arg in args:
+                        if hasattr(arg, "user"):
+                            request = arg
+                            break
+                        if hasattr(arg, "request"):
+                            request = arg.request
+                            break
 
                 if request and request.user.is_authenticated:
                     cache_key_parts.append(f"user_{request.user.id}")
@@ -386,14 +404,16 @@ def paginate_response(
 
                 if status_code == HTTP_OK and isinstance(data, QuerySet):
                     # Extract pagination params from request
-                    request = None
-                    for arg in args:
-                        if hasattr(arg, "GET"):
-                            request = arg
-                            break
-                        if hasattr(arg, "request"):
-                            request = arg.request
-                            break
+                    # Check kwargs first (Ninja Extra passes request as kwarg)
+                    request = kwargs.get("request")
+                    if request is None:
+                        for arg in args:
+                            if hasattr(arg, "GET"):
+                                request = arg
+                                break
+                            if hasattr(arg, "request"):
+                                request = arg.request
+                                break
 
                     if request:
                         page = int(request.GET.get("page", 1))
@@ -432,15 +452,16 @@ def search_and_filter(**filter_config) -> Callable:
                 status_code, data = result
 
                 if status_code == HTTP_OK and isinstance(data, QuerySet):
-                    # Extract request
-                    request = None
-                    for arg in args:
-                        if hasattr(arg, "GET"):
-                            request = arg
-                            break
-                        if hasattr(arg, "request"):
-                            request = arg.request
-                            break
+                    # Extract request — check kwargs first (Ninja Extra passes request as kwarg)
+                    request = kwargs.get("request")
+                    if request is None:
+                        for arg in args:
+                            if hasattr(arg, "GET"):
+                                request = arg
+                                break
+                            if hasattr(arg, "request"):
+                                request = arg.request
+                                break
 
                     if request:
                         data = _apply_search_and_filters(data, request, filter_config)
@@ -564,10 +585,16 @@ def api_endpoint(
 
 # Specific decorators for different endpoint types
 def list_endpoint(**kwargs) -> Callable:
-    """Decorator for list endpoints with pagination and search."""
+    """Decorator for list endpoints with search and DB optimizations.
+
+    Pagination is handled by Django Ninja natively via the response schema.
+    The paginate_response wrapper is intentionally disabled here because
+    it wraps QuerySets in a dict, which conflicts with Ninja's own
+    list-response serialization.
+    """
     defaults = {
         "require_auth": True,
-        "enable_pagination": True,
+        "enable_pagination": False,
         "log_calls": True,
         "cache_timeout": 300,
     }

@@ -12,7 +12,7 @@ from .cart import Cart
 class CartItem(AbstractBaseModel):
     """Shopping cart item model for storing individual cart items."""
 
-    cart = models.ForeignKey(Cart, on_delete=models.CASCADE)
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
     product_variant = models.ForeignKey(ProductVariant, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
     price = models.DecimalField(max_digits=10, decimal_places=2)

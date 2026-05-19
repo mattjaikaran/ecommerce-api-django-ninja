@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @api_controller("/carts", tags=["Carts"])
 class CartController:
-    @http_get("", response={200: list[CartSchema]})
+    @http_get("", response={200: list[CartSchema], 401: dict, 403: dict})
     @list_endpoint(
         select_related=["customer__user"],
         prefetch_related=["items__product_variant__product"],
@@ -44,9 +44,12 @@ class CartController:
         ordering_fields=["created_at", "updated_at"],
     )
     def list_carts(self, request):
-        return 200, Cart.objects.filter(is_active=True)
+        qs = Cart.objects.filter(is_active=True)
+        if not request.user.is_staff:
+            qs = qs.filter(customer__user=request.user)
+        return 200, qs
 
-    @http_get("/{cart_id}", response={200: CartSchema, 404: dict})
+    @http_get("/{cart_id}", response={200: CartSchema, 404: dict, 401: dict, 403: dict})
     @detail_endpoint(
         select_related=["customer__user"],
         prefetch_related=[
@@ -56,19 +59,25 @@ class CartController:
         ],
     )
     def get_cart(self, request, cart_id: UUID):
-        cart = get_object_or_404(Cart, id=cart_id, is_active=True)
+        kwargs = {"id": cart_id, "is_active": True}
+        if request.user.is_authenticated and not request.user.is_staff:
+            kwargs["customer__user"] = request.user
+        cart = get_object_or_404(Cart, **kwargs)
         return 200, CartSchema.from_orm(cart)
 
-    @http_post("", response={201: CartSchema, 400: dict})
+    @http_post("", response={201: CartSchema, 400: dict, 401: dict, 403: dict})
     @create_endpoint(require_auth=False)
     def create_cart(self, request, payload: CartCreateSchema):
         cart = CartService.create_cart(payload, request.user)
         return 201, CartSchema.from_orm(cart)
 
-    @http_put("/{cart_id}", response={200: CartSchema, 400: dict, 404: dict})
+    @http_put("/{cart_id}", response={200: CartSchema, 400: dict, 404: dict, 401: dict, 403: dict})
     @update_endpoint(require_auth=False)
     def update_cart(self, request, cart_id: UUID, payload: CartUpdateSchema):
-        cart = get_object_or_404(Cart, id=cart_id)
+        kwargs = {"id": cart_id}
+        if request.user.is_authenticated and not request.user.is_staff:
+            kwargs["customer__user"] = request.user
+        cart = get_object_or_404(Cart, **kwargs)
         for field, value in payload.dict(exclude_unset=True).items():
             setattr(cart, field, value)
         if request.user.is_authenticated:
@@ -76,14 +85,15 @@ class CartController:
         cart.save()
         return 200, CartSchema.from_orm(cart)
 
-    @http_delete("/{cart_id}", response={204: None, 404: dict})
+    @http_delete("/{cart_id}", response={204: None, 404: dict, 401: dict, 403: dict})
     @delete_endpoint(require_auth=False)
     def delete_cart(self, request, cart_id: UUID):
         cart = get_object_or_404(Cart, id=cart_id)
-        cart.delete()
+        cart.is_active = False
+        cart.save(update_fields=["is_active"])
         return 204, None
 
-    @http_get("/{cart_id}/items", response={200: list[CartItemSchema]})
+    @http_get("/{cart_id}/items", response={200: list[CartItemSchema], 401: dict, 403: dict})
     @list_endpoint(
         require_auth=False,
         select_related=["cart", "product_variant__product"],
@@ -97,21 +107,21 @@ class CartController:
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
         return 200, cart.items.all().order_by("created_at")
 
-    @http_post("/{cart_id}/items", response={201: CartItemSchema, 400: dict, 404: dict})
+    @http_post("/{cart_id}/items", response={201: CartItemSchema, 400: dict, 404: dict, 401: dict, 403: dict})
     @create_endpoint(require_auth=False)
     def add_cart_item(self, request, cart_id: UUID, payload: CartItemCreateSchema):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
         item = CartService.add_item(cart, payload, request.user)
         return 201, CartItemSchema.from_orm(item)
 
-    @http_put("/{cart_id}/items/{item_id}", response={200: CartItemSchema, 400: dict, 404: dict})
+    @http_put("/{cart_id}/items/{item_id}", response={200: CartItemSchema, 400: dict, 404: dict, 401: dict, 403: dict})
     @update_endpoint(require_auth=False)
     def update_cart_item(self, request, cart_id: UUID, item_id: UUID, payload: CartItemUpdateSchema):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
         item = get_object_or_404(CartItem, id=item_id, cart=cart)
         return 200, CartItemSchema.from_orm(CartService.update_item(cart, item, payload, request.user))
 
-    @http_delete("/{cart_id}/items/{item_id}", response={204: None, 404: dict})
+    @http_delete("/{cart_id}/items/{item_id}", response={204: None, 404: dict, 401: dict, 403: dict})
     @delete_endpoint(require_auth=False)
     def remove_cart_item(self, request, cart_id: UUID, item_id: UUID):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
@@ -119,13 +129,13 @@ class CartController:
         CartService.remove_item(cart, item)
         return 204, None
 
-    @http_post("/{cart_id}/clear", response={200: CartSchema, 404: dict})
+    @http_post("/{cart_id}/clear", response={200: CartSchema, 404: dict, 401: dict, 403: dict})
     @update_endpoint(require_auth=False)
     def clear_cart(self, request, cart_id: UUID):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
         return 200, CartSchema.from_orm(CartService.clear(cart))
 
-    @http_get("/session/{session_key}", response={200: CartSchema, 404: dict})
+    @http_get("/session/{session_key}", response={200: CartSchema, 404: dict, 401: dict, 403: dict})
     @detail_endpoint(
         require_auth=False,
         cache_timeout=60,
@@ -136,7 +146,7 @@ class CartController:
         cart = get_object_or_404(Cart, session_key=session_key, is_active=True)
         return 200, CartSchema.from_orm(cart)
 
-    @http_get("/customer/{customer_id}", response={200: list[CartSchema]})
+    @http_get("/customer/{customer_id}", response={200: list[CartSchema], 401: dict, 403: dict})
     @list_endpoint(
         select_related=["customer__user"],
         prefetch_related=["items__product_variant__product"],
@@ -146,7 +156,7 @@ class CartController:
     def get_customer_carts(self, request, customer_id: UUID):
         return 200, Cart.objects.filter(customer_id=customer_id, is_active=True)
 
-    @http_post("/{cart_id}/merge/{source_cart_id}", response={200: CartSchema, 400: dict, 404: dict})
+    @http_post("/{cart_id}/merge/{source_cart_id}", response={200: CartSchema, 400: dict, 404: dict, 401: dict, 403: dict})
     @update_endpoint(require_auth=False)
     def merge_carts(self, request, cart_id: UUID, source_cart_id: UUID):
         target = get_object_or_404(Cart, id=cart_id, is_active=True)

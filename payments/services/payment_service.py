@@ -28,7 +28,10 @@ class PaymentService:
         # Ensure customer has a Stripe customer record
         customer = user.customer
         if not customer.stripe_customer_id:
-            stripe_customer = client.Customer.create(email=user.email, name=user.get_full_name())
+            stripe_customer = client.Customer.create(
+                email=user.email,
+                name=getattr(user, "full_name", None) or user.email,
+            )
             customer.stripe_customer_id = stripe_customer["id"]
             customer.save(update_fields=["stripe_customer_id"])
 
@@ -57,7 +60,9 @@ class PaymentService:
         """Create a Stripe PaymentIntent and record the transaction."""
         client = _stripe()
 
-        amount_cents = int(order.total_price * 100)
+        # Order model uses 'total' field; support both 'total' and 'total_price'
+        order_total = getattr(order, "total", None) or getattr(order, "total_price", 0)
+        amount_cents = int(order_total * 100)
         intent = client.PaymentIntent.create(
             amount=amount_cents,
             currency=order.currency.lower() if hasattr(order, "currency") else "usd",
@@ -72,7 +77,7 @@ class PaymentService:
             payment_method=payment_method,
             gateway=PaymentGateway.STRIPE,
             status=PaymentStatus.PENDING,
-            amount=order.total_price,
+            amount=order_total,
             currency=(order.currency.lower() if hasattr(order, "currency") else "USD").upper(),
             stripe_payment_intent_id=intent["id"],
             gateway_response=intent,

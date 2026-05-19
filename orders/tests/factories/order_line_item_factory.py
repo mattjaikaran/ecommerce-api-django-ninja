@@ -24,7 +24,7 @@ class OrderLineItemFactory(factory.django.DjangoModelFactory):
         left_digits=2,
         right_digits=2,
         positive=True,
-        min_value=Decimal("0.00"),
+        min_value=Decimal("0.01"),
         max_value=Decimal("10.00"),
     )
     tax_amount = factory.LazyAttribute(

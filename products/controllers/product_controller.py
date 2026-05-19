@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class ProductController:
     """Product management controller with comprehensive decorators."""
 
-    @http_get("", response={200: list[ProductListSchema], 400: dict})
+    @http_get("", response={200: list[ProductListSchema], 400: dict, 401: dict, 403: dict})
     @list_endpoint(
         cache_timeout=300,
         select_related=["category", "created_by", "updated_by"],
@@ -81,7 +81,7 @@ class ProductController:
         """Get all products with advanced filtering and optimization."""
         return 200, Product.objects.filter(is_active=True)
 
-    @http_get("/{product_id}", response={200: ProductSchema, 400: dict, 404: dict})
+    @http_get("/{product_id}", response={200: ProductSchema, 400: dict, 401: dict, 403: dict, 404: dict})
     @detail_endpoint(
         cache_timeout=600,
         select_related=["category", "created_by", "updated_by"],
@@ -101,7 +101,7 @@ class ProductController:
         product = get_object_or_404(Product, id=product_id, is_active=True)
         return 200, ProductSchema.from_orm(product)
 
-    @http_post("", response={201: ProductSchema, 400: dict})
+    @http_post("", response={201: ProductSchema, 400: dict, 401: dict, 403: dict, 409: dict, 500: dict})
     @create_endpoint(require_admin=True)
     @transaction.atomic
     def create_product(self, request, payload: ProductCreateSchema):
@@ -113,7 +113,7 @@ class ProductController:
         )
         return 201, ProductSchema.from_orm(product)
 
-    @http_put("/{product_id}", response={200: ProductSchema, 400: dict, 404: dict})
+    @http_put("/{product_id}", response={200: ProductSchema, 400: dict, 401: dict, 403: dict, 404: dict, 409: dict, 422: dict})
     @update_endpoint(require_admin=True)
     @transaction.atomic
     def update_product(self, request, product_id: UUID, payload: ProductUpdateSchema):
@@ -128,7 +128,7 @@ class ProductController:
 
         return 200, ProductSchema.from_orm(product)
 
-    @http_delete("/{product_id}", response={204: None, 404: dict})
+    @http_delete("/{product_id}", response={204: None, 401: dict, 403: dict, 404: dict})
     @delete_endpoint(require_admin=True)
     def delete_product(self, request, product_id: UUID):
         """Soft delete a product."""

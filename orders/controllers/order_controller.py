@@ -36,10 +36,18 @@ logger = logging.getLogger(__name__)
 
 @api_controller("/orders", tags=["Orders"])
 class OrderController:
-    @http_get("", response={200: list[OrderSchema]})
+    @http_get("", response={200: list[OrderSchema], 401: dict, 403: dict})
     @list_endpoint(
-        select_related=["customer", "billing_address", "shipping_address"],
-        prefetch_related=["items__product_variant__product"],
+        select_related=["customer", "customer_group", "billing_address", "shipping_address"],
+        prefetch_related=[
+            "items__product_variant__product",
+            "fulfillments",
+            "transactions",
+            "refunds",
+            "taxes",
+            "notes",
+            "history",
+        ],
         search_fields=["order_number", "email", "customer__user__username"],
         filter_fields={
             "status": "exact",
@@ -54,30 +62,39 @@ class OrderController:
         ordering_fields=["created_at", "order_number", "total"],
     )
     def list_orders(self, request):
-        return 200, Order.objects.all()
+        qs = Order.objects.all()
+        if not request.user.is_staff:
+            qs = qs.filter(customer__user=request.user)
+        return 200, qs
 
-    @http_get("/{order_id}", response={200: OrderSchema, 404: dict})
+    @http_get("/{order_id}", response={200: OrderSchema, 401: dict, 403: dict, 404: dict})
     @detail_endpoint(
         select_related=["customer__user", "billing_address", "shipping_address", "customer_group"],
         prefetch_related=["items__product_variant__product", "history", "notes"],
     )
     def get_order(self, request, order_id: str):
-        order = get_object_or_404(Order, id=order_id)
+        kwargs = {"id": order_id}
+        if not request.user.is_staff:
+            kwargs["customer__user"] = request.user
+        order = get_object_or_404(Order, **kwargs)
         return 200, order
 
-    @http_post("", response={201: OrderSchema, 400: dict, 404: dict})
+    @http_post("", response={201: OrderSchema, 400: dict, 401: dict, 403: dict, 404: dict, 409: dict})
     @create_endpoint()
     def create_order(self, request, payload: OrderCreateSchema):
         order = OrderService.create_order(payload, request.user, request.META)
         return 201, order
 
-    @http_put("/{order_id}", response={200: OrderSchema, 400: dict, 404: dict})
+    @http_put("/{order_id}", response={200: OrderSchema, 400: dict, 401: dict, 403: dict, 404: dict})
     @update_endpoint()
     def update_order(self, request, order_id: str, payload: OrderUpdateSchema):
         order = get_object_or_404(Order, id=order_id)
+        if payload.status is not None and not request.user.is_staff:
+            from api.exceptions import APIPermissionError
+            raise APIPermissionError("Only admins can update order status")
         return 200, OrderService.update_order(order, payload, request.user)
 
-    @http_delete("/{order_id}", response={204: None, 400: dict, 404: dict})
+    @http_delete("/{order_id}", response={204: None, 400: dict, 401: dict, 403: dict, 404: dict})
     @delete_endpoint()
     def delete_order(self, request, order_id: str):
         order = get_object_or_404(Order, id=order_id)
@@ -118,7 +135,7 @@ class OrderController:
         order = get_object_or_404(Order, id=order_id)
         return 200, OrderService.cancel_order(order, request.user)
 
-    @http_get("/{order_id}/history", response={200: list[OrderHistorySchema], 404: dict})
+    @http_get("/{order_id}/history", response={200: list[OrderHistorySchema], 401: dict, 403: dict, 404: dict})
     @list_endpoint(
         select_related=["order", "created_by"],
         ordering_fields=["created_at"],
@@ -127,10 +144,18 @@ class OrderController:
         order = get_object_or_404(Order, id=order_id)
         return 200, order.history.all().order_by("-created_at")
 
-    @http_get("/search", response={200: list[OrderSchema]})
+    @http_get("/search", response={200: list[OrderSchema], 401: dict, 403: dict})
     @list_endpoint(
-        select_related=["customer", "billing_address", "shipping_address"],
-        prefetch_related=["items__product_variant__product"],
+        select_related=["customer", "customer_group", "billing_address", "shipping_address"],
+        prefetch_related=[
+            "items__product_variant__product",
+            "fulfillments",
+            "transactions",
+            "refunds",
+            "taxes",
+            "notes",
+            "history",
+        ],
         search_fields=["order_number", "email", "customer__user__username"],
         filter_fields={"status": "exact", "payment_status": "exact"},
         ordering_fields=["created_at", "order_number", "total"],

@@ -1,4 +1,3 @@
-from debug_toolbar.toolbar import debug_toolbar_urls
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -113,9 +112,12 @@ urlpatterns = [
     path("webhooks/stripe/", stripe_webhook, name="stripe-webhook"),
     # Health checks
     path("", include(health_patterns)),
-    # Debug toolbar (development only)
-    *debug_toolbar_urls(),
 ]
+
+# Debug toolbar (development only, excluded during tests)
+if "debug_toolbar" in settings.INSTALLED_APPS:
+    from debug_toolbar.toolbar import debug_toolbar_urls
+    urlpatterns += [*debug_toolbar_urls()]
 
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
