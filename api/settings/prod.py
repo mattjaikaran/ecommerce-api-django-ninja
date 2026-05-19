@@ -95,14 +95,15 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@example.com")
 #     'CacheControl': 'max-age=86400',
 # }
 
-# Production logging
+# Production logging — JSON to stdout (parseable by any log aggregator)
+LOGGING["handlers"]["console"]["formatter"] = "json"
 LOGGING["handlers"].update(
     {
         "file": {
             "level": "INFO",
             "class": "logging.FileHandler",
             "filename": "/app/logs/django.log",
-            "formatter": "verbose",
+            "formatter": "json",
         },
     }
 )
@@ -122,6 +123,31 @@ LOGGING["loggers"].update(
         "django.security": {
             "handlers": ["console", "file"],
             "level": "WARNING",
+            "propagate": False,
+        },
+        "orders": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "cart": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "products": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "analytics": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payments": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
             "propagate": False,
         },
     }

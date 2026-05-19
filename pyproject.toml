@@ -148,6 +148,7 @@ dependencies = [
     "pathspec>=0.12.1",
     "annotated-types>=0.7.0",
     "sentry-sdk[celery,django]>=2.60.0",
+    "python-json-logger>=4.1.0",
 ]
 
 [project.optional-dependencies]
@@ -262,6 +263,7 @@ ignore = [
 "manage.py" = ["D", "INP001"]
 "*/settings/*" = ["F405", "F403"]
 "*/settings.py" = ["F405", "F403"]
+"*/tasks.py" = ["PLC0415"]  # Django model imports inside tasks avoid circular imports
 
 [tool.ruff.lint.isort]
 known-first-party = ["analytics", "cart", "core", "orders", "payments", "products"]

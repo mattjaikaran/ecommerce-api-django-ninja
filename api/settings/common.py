@@ -273,10 +273,26 @@ CELERY_TASK_ROUTES = {
     "orders.tasks.*": {"queue": "orders"},
     "cart.tasks.*": {"queue": "cart"},
     "payments.tasks.*": {"queue": "payments"},
+    "analytics.tasks.*": {"queue": "core"},
 }
 
 # Task result expires
 CELERY_RESULT_EXPIRES = 3600
+
+# Dead Letter Queue — tasks that exhaust retries land in "dead_letter"
+# Workers ack after return so a crashed worker requeues the task.
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_TASK_ACKS_LATE = True
+
+CELERY_TASK_QUEUES_MAX_PRIORITY = 10
+
+# Per-task retry limits (max_retries on the task decorator takes precedence,
+# but this is the global fallback used by on_failure routing below).
+CELERY_TASK_MAX_RETRIES = 3
+
+# Route exhausted tasks to dead_letter queue via the on_failure signal
+# (configured in api/celery.py signal handler — see below).
+CELERY_DEAD_LETTER_QUEUE = "dead_letter"
 
 # Logging configuration
 LOGGING = {
@@ -291,12 +307,21 @@ LOGGING = {
             "format": "{levelname} {message}",
             "style": "{",
         },
+        "json": {
+            "()": "pythonjsonlogger.json.JsonFormatter",
+            "fmt": "%(levelname)s %(asctime)s %(name)s %(module)s %(message)s",
+        },
     },
     "handlers": {
         "console": {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
             "formatter": "simple",
+        },
+        "console_json": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "json",
         },
     },
     "loggers": {
@@ -326,6 +351,31 @@ LOGGING = {
             "propagate": False,
         },
         "celery": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "orders": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "cart": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "products": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "analytics": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payments": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
