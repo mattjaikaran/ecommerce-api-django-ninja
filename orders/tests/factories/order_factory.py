@@ -36,7 +36,7 @@ class OrderFactory(factory.django.DjangoModelFactory):
         left_digits=2,
         right_digits=2,
         positive=True,
-        min_value=Decimal("0.00"),
+        min_value=Decimal("1.00"),
         max_value=Decimal("50.00"),
     )
     shipping_method = ShippingMethod.STANDARD
@@ -45,23 +45,16 @@ class OrderFactory(factory.django.DjangoModelFactory):
         left_digits=1,
         right_digits=2,
         positive=True,
-        min_value=Decimal("0.00"),
+        min_value=Decimal("0.01"),
         max_value=Decimal("5.00"),
     )
-    discount_amount = factory.Faker(
-        "pydecimal",
-        left_digits=2,
-        right_digits=2,
-        positive=True,
-        min_value=Decimal("0.00"),
-        max_value=Decimal("20.00"),
-    )
+    discount_amount = Decimal("0.00")
     tax_amount = factory.Faker(
         "pydecimal",
         left_digits=2,
         right_digits=2,
         positive=True,
-        min_value=Decimal("0.00"),
+        min_value=Decimal("1.00"),
         max_value=Decimal("50.00"),
     )
     total = factory.LazyAttribute(

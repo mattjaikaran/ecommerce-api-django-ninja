@@ -13,9 +13,7 @@ class ProductCategoryFactory(factory.django.DjangoModelFactory):
         model = ProductCategory
 
     name = factory.Faker("word")
-    slug = factory.LazyAttribute(
-        lambda obj: f"{obj.name.lower()}-{factory.Faker('random_int', min=100, max=999).generate()}"
-    )
+    slug = factory.Sequence(lambda n: f"category-{n}")
     description = factory.Faker("text", max_nb_chars=200)
     parent = None
     seo_title = factory.LazyAttribute(lambda obj: f"{obj.name} - Category")

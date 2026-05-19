@@ -16,9 +16,7 @@ class ProductFactory(factory.django.DjangoModelFactory):
         model = Product
 
     name = factory.Faker("word")
-    slug = factory.LazyAttribute(
-        lambda obj: f"{obj.name.lower()}-{factory.Faker('random_int', min=100, max=999).generate()}"
-    )
+    slug = factory.Sequence(lambda n: f"product-{n}")
     description = factory.Faker("text", max_nb_chars=500)
     category = factory.SubFactory(ProductCategoryFactory)
     type = ProductType.PHYSICAL
