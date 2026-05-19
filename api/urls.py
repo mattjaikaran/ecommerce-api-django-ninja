@@ -7,6 +7,7 @@ from ninja import Redoc
 from ninja_extra import NinjaExtraAPI
 from ninja_jwt.controller import NinjaJWTDefaultController
 
+from coupons.controllers import CouponController
 from analytics.controllers import (
     CustomerAnalyticsController,
     PerformanceMetricController,
@@ -76,6 +77,7 @@ api.register_controllers(
     OrderController,
     DiscountController,
     PaymentController,
+    CouponController,
     SalesReportController,
     PerformanceMetricController,
     ProductAnalyticsController,

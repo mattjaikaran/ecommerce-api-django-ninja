@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "orders",  # orders app
     "analytics",  # analytics app
     "payments",  # payments app
+    "coupons",  # coupons app
     #####
     # third party packages
     #####
