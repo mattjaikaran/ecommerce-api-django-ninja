@@ -8,6 +8,10 @@ from ninja_extra import NinjaExtraAPI
 from ninja_jwt.controller import NinjaJWTDefaultController
 
 from coupons.controllers import CouponController
+from feature_flags.controllers import FeatureFlagController
+from gift_cards.controllers import GiftCardController
+from outbound_webhooks.controllers import WebhookDeliveryController, WebhookEndpointController
+from subscriptions.controllers import CustomerSubscriptionController, SubscriptionPlanController
 from analytics.controllers import (
     CustomerAnalyticsController,
     PerformanceMetricController,
@@ -78,6 +82,12 @@ api.register_controllers(
     DiscountController,
     PaymentController,
     CouponController,
+    WebhookEndpointController,
+    WebhookDeliveryController,
+    FeatureFlagController,
+    GiftCardController,
+    SubscriptionPlanController,
+    CustomerSubscriptionController,
     SalesReportController,
     PerformanceMetricController,
     ProductAnalyticsController,

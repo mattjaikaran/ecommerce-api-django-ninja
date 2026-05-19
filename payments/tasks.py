@@ -33,6 +33,34 @@ def dispatch_stripe_event(self, webhook_log_id: str, event_type: str, event_data
         if handler:
             handler(event_data)
 
+        subscription_events = {
+            "customer.subscription.created",
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
+        }
+        if event_type in subscription_events:
+            from subscriptions.services import SubscriptionService
+
+            sub_data = event_data.get("object", event_data)
+            SubscriptionService.sync_from_stripe(sub_data)
+
+        invoice_events = {"invoice.payment_succeeded", "invoice.payment_failed"}
+        if event_type in invoice_events:
+            from subscriptions.services import SubscriptionService
+
+            invoice = event_data.get("object", event_data)
+            stripe_sub_id = invoice.get("subscription")
+            if stripe_sub_id:
+                import stripe as stripe_lib
+                from django.conf import settings
+
+                stripe_lib.api_key = settings.STRIPE_SECRET_KEY
+                try:
+                    stripe_sub = stripe_lib.Subscription.retrieve(stripe_sub_id)
+                    SubscriptionService.sync_from_stripe(dict(stripe_sub))
+                except Exception:
+                    logger.exception("failed to sync subscription %s", stripe_sub_id)
+
         StripeWebhookEvent.objects.filter(id=webhook_log_id).update(
             status=WebhookEventStatus.PROCESSED,
             processed_at=timezone.now(),

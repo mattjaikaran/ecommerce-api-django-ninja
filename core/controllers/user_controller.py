@@ -8,6 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
+from ninja_extra.throttling import throttle
 from ninja_jwt.tokens import RefreshToken
 
 from api.decorators import (
@@ -24,6 +25,7 @@ from core.schemas import (
     UserSignupSchema,
     UserUpdateSchema,
 )
+from core.throttles import LoginRateThrottle, RegisterRateThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class UserController:
     """User management controller with comprehensive decorators."""
 
     @http_post("/signup", response={201: UserSchema, 400: dict})
+    @throttle(RegisterRateThrottle)
     @create_endpoint(require_auth=False)
     def signup(self, request, data: UserSignupSchema):
         """Create a new user account."""
@@ -66,6 +69,7 @@ class UserController:
         return 201, UserSchema.from_orm(user)
 
     @http_post("/login", response={200: dict, 400: dict})
+    @throttle(LoginRateThrottle)
     @create_endpoint(require_auth=False)
     def login(self, request, data: UserLoginSchema):
         """Authenticate user and return tokens."""

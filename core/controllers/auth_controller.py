@@ -7,10 +7,12 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_post
+from ninja_extra.throttling import throttle
 
 from api.decorators import handle_exceptions, log_api_call
 from core.models import OneTimePassword
 from core.schemas import PasswordlessLoginRequest, PasswordlessLoginVerify
+from core.throttles import LoginRateThrottle
 
 User = get_user_model()
 
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 @api_controller("/auth", tags=["Auth"])
 class AuthController:
     @http_post("/passwordless/login/request", response={200: dict})
+    @throttle(LoginRateThrottle)
     @handle_exceptions
     @log_api_call()
     def request_passwordless_login(self, payload: PasswordlessLoginRequest):

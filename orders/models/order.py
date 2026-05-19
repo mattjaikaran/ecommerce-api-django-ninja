@@ -2,6 +2,8 @@ import uuid
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 from core.models import AbstractBaseModel, Address, Customer, CustomerGroup
 
@@ -84,3 +86,19 @@ class Order(AbstractBaseModel):
             models.Index(fields=["payment_status"]),
             models.Index(fields=["created_at"]),
         ]
+
+
+@receiver(post_save, sender=Order)
+def order_post_save(sender, instance, created, **kwargs):
+    try:
+        from outbound_webhooks.signals import fire_webhook_event
+
+        payload = {
+            "id": str(instance.id),
+            "status": instance.status,
+            "total": str(instance.total),
+        }
+        event_type = "order.created" if created else "order.updated"
+        fire_webhook_event(event_type, payload)
+    except Exception:
+        pass

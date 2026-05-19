@@ -23,8 +23,11 @@ HANDLED_EVENTS = {
     "payment_intent.succeeded",
     "payment_intent.payment_failed",
     "charge.refunded",
+    "customer.subscription.created",
     "customer.subscription.updated",
     "customer.subscription.deleted",
+    "invoice.payment_succeeded",
+    "invoice.payment_failed",
 }
 
 

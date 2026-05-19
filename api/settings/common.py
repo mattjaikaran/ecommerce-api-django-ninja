@@ -37,6 +37,9 @@ env = environ.Env(
     SENTRY_ENVIRONMENT=(str, "production"),
     SENTRY_TRACES_SAMPLE_RATE=(float, 0.1),
     SENTRY_PROFILES_SAMPLE_RATE=(float, 0.1),
+    OTEL_ENABLED=(bool, False),
+    OTEL_EXPORTER_OTLP_ENDPOINT=(str, "http://localhost:4317"),
+    OTEL_SERVICE_NAME=(str, "ecommerce-api"),
 )
 
 # Read .env file
@@ -81,6 +84,10 @@ INSTALLED_APPS = [
     "analytics",  # analytics app
     "payments",  # payments app
     "coupons",  # coupons app
+    "outbound_webhooks",  # outbound webhooks app
+    "feature_flags",  # feature flags app
+    "gift_cards",  # gift cards app
+    "subscriptions",  # subscriptions app
     #####
     # third party packages
     #####
@@ -188,6 +195,9 @@ NINJA_EXTRA = {
     "THROTTLE_RATES": {
         "user": "1000/day",  # 1000 requests per day for authenticated users
         "anon": "100/day",  # 100 requests per day for anonymous users
+        "login": "10/min",
+        "register": "5/min",
+        "password_reset": "3/min",
     },
     "NUM_PROXIES": None,  # number of proxies
     "ORDERING_CLASS": "ninja_extra.ordering.Ordering",  # included ordering
@@ -274,6 +284,7 @@ CELERY_TASK_ROUTES = {
     "cart.tasks.*": {"queue": "cart"},
     "payments.tasks.*": {"queue": "payments"},
     "analytics.tasks.*": {"queue": "core"},
+    "outbound_webhooks.tasks.*": {"queue": "webhooks"},
 }
 
 # Task result expires
@@ -380,5 +391,30 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "outbound_webhooks": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "feature_flags": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "gift_cards": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "subscriptions": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
+
+if env("OTEL_ENABLED"):
+    from api.otel import setup_otel
+
+    setup_otel()
