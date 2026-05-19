@@ -1,26 +1,23 @@
-# Optimized for OrbStack
-
 services:
-  # PostgreSQL 17 Database
+  # ── Infrastructure (always start) ──────────────────────────────────────────
   db:
     image: postgres:17-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_DB=${DB_NAME:-ecommerce_db}
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-ecommerce_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     ports:
       - "5432:5432"
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
-  # Redis for caching and Celery broker
   redis:
     image: redis:7.2-alpine
     ports:
@@ -32,18 +29,16 @@ services:
       - app-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
+      interval: 10s
+      timeout: 5s
       retries: 5
 
-  # Django Web Application with Hot Reloading
+  # ── Dev profile ────────────────────────────────────────────────────────────
   django:
+    profiles: [dev]
     build: .
-    entrypoint: ["/usr/local/bin/docker-entrypoint-dev.sh"]
-    command: >
-      sh -c "python manage.py migrate &&
-             python manage.py collectstatic --noinput &&
-             python manage.py runserver_dev 0.0.0.0:8000"
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
       - static_volume:/app/static
@@ -51,19 +46,20 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-api.settings.dev}
-      - DEBUG=${DEBUG:-1}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
-      - DB_NAME=${DB_NAME:-ecommerce_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=${DB_HOST:-db}
-      - DB_PORT=${DB_PORT:-5432}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0,django}
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-api.settings.dev}
+      DEBUG: "1"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      DB_NAME: ${DB_NAME:-ecommerce_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      ALLOWED_HOSTS: "localhost,127.0.0.1,0.0.0.0,django"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
     depends_on:
       db:
         condition: service_healthy
@@ -72,26 +68,25 @@ services:
     networks:
       - app-network
 
-  # Celery Worker
   celery:
+    profiles: [dev]
     build: .
-    entrypoint: ["/usr/local/bin/docker-entrypoint-dev.sh"]
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
     command: celery -A api worker --loglevel=info
     volumes:
       - .:/app
     environment:
-      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-api.settings.dev}
-      - DEBUG=${DEBUG:-1}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
-      - DB_NAME=${DB_NAME:-ecommerce_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=${DB_HOST:-db}
-      - DB_PORT=${DB_PORT:-5432}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-api.settings.dev}
+      DEBUG: "1"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      DB_NAME: ${DB_NAME:-ecommerce_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
@@ -100,61 +95,183 @@ services:
     networks:
       - app-network
 
-  # Celery Beat (Scheduler)
   celery-beat:
+    profiles: [dev]
     build: .
-    entrypoint: ["/usr/local/bin/docker-entrypoint-dev.sh"]
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
     command: celery -A api beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     volumes:
       - .:/app
     environment:
-      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-api.settings.dev}
-      - DEBUG=${DEBUG:-1}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
-      - DB_NAME=${DB_NAME:-ecommerce_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=${DB_HOST:-db}
-      - DB_PORT=${DB_PORT:-5432}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-api.settings.dev}
+      DEBUG: "1"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      DB_NAME: ${DB_NAME:-ecommerce_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      django:
-        condition: service_started
     networks:
       - app-network
 
-  # Flower (Celery Monitoring)
   flower:
+    profiles: [dev]
     build: .
-    entrypoint: ["/usr/local/bin/docker-entrypoint-dev.sh"]
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
     command: celery -A api flower --port=5555
     ports:
       - "5555:5555"
     environment:
-      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-api.settings.dev}
-      - DEBUG=${DEBUG:-1}
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here-change-in-production}
-      - DB_NAME=${DB_NAME:-ecommerce_db}
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-postgres}
-      - DB_HOST=${DB_HOST:-db}
-      - DB_PORT=${DB_PORT:-5432}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-api.settings.dev}
+      DEBUG: "1"
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     depends_on:
-      - celery
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - app-network
+
+  # ── Prod profile ───────────────────────────────────────────────────────────
+  web:
+    profiles: [prod]
+    build: .
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: gunicorn api.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+      - logs_volume:/app/logs
+    expose:
+      - "8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: api.settings.prod
+      DEBUG: "0"
+      SECRET_KEY: ${SECRET_KEY}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+      FRONTEND_URL: ${FRONTEND_URL}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  worker:
+    profiles: [prod]
+    build: .
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: celery -A api worker --loglevel=info --concurrency=2
+    volumes:
+      - logs_volume:/app/logs
+    environment:
+      DJANGO_SETTINGS_MODULE: api.settings.prod
+      DEBUG: "0"
+      SECRET_KEY: ${SECRET_KEY}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  scheduler:
+    profiles: [prod]
+    build: .
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: celery -A api beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - logs_volume:/app/logs
+    environment:
+      DJANGO_SETTINGS_MODULE: api.settings.prod
+      DEBUG: "0"
+      SECRET_KEY: ${SECRET_KEY}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  monitor:
+    profiles: [prod]
+    build: .
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: celery -A api flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+    ports:
+      - "5555:5555"
+    environment:
+      DJANGO_SETTINGS_MODULE: api.settings.prod
+      DEBUG: "0"
+      SECRET_KEY: ${SECRET_KEY}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  nginx:
+    profiles: [prod]
+    build: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - web
+    networks:
+      - app-network
+    restart: unless-stopped
 
 networks:
   app-network:
@@ -165,3 +282,4 @@ volumes:
   redis_data:
   static_volume:
   media_volume:
+  logs_volume:

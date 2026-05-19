@@ -1,256 +1,171 @@
-# Makefile for Django Ecommerce API with UV Package Management
+.PHONY: help up up-build up-prod up-prod-build down down-prod down-volumes \
+        logs logs-django logs-celery logs-db logs-redis \
+        shell shell-plus migrate makemigrations createsuperuser collectstatic \
+        db-shell db-backup db-restore redis-cli redis-flush \
+        celery-shell celery-purge celery-status \
+        test test-coverage lint lint-fix format format-check mypy check fix \
+        clean clean-all restart health monitor setup setup-env \
+        install sync lock add
 
-.PHONY: help build up down logs shell migrate createsuperuser test lint format clean install sync
+DC      = docker compose
+DEV     = $(DC) --profile dev
+PROD    = $(DC) --profile prod
+UV      = uv
 
-# Variables
-DOCKER_COMPOSE = docker-compose
-DOCKER_COMPOSE_PROD = docker-compose -f docker-compose.prod.yml
-DJANGO_SERVICE = django
-DB_SERVICE = db
-REDIS_SERVICE = redis
-CELERY_SERVICE = celery
-UV = uv
+# ── Help ──────────────────────────────────────────────────────────────────────
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort \
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-# Default target
-help: ## Show this help message
-	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+# ── Dev lifecycle ─────────────────────────────────────────────────────────────
+up: ## Start dev environment (db, redis, django, celery, beat, flower)
+	$(DEV) up -d
 
-# Development commands
-build: ## Build the Docker images
-	$(DOCKER_COMPOSE) build
+up-build: ## Build images then start dev environment
+	$(DEV) up -d --build
 
-up: ## Start the development environment
-	$(DOCKER_COMPOSE) up -d
+down: ## Stop dev environment
+	$(DEV) down
 
-up-build: ## Build and start the development environment
-	$(DOCKER_COMPOSE) up -d --build
+down-volumes: ## Stop dev environment and remove all volumes
+	$(DC) down -v
 
-down: ## Stop the development environment
-	$(DOCKER_COMPOSE) down
+# ── Prod lifecycle ────────────────────────────────────────────────────────────
+up-prod: ## Start prod environment (db, redis, web, worker, scheduler, nginx)
+	$(PROD) up -d
 
-down-volumes: ## Stop the development environment and remove volumes
-	$(DOCKER_COMPOSE) down -v
+up-prod-build: ## Build images then start prod environment
+	$(PROD) up -d --build
 
-logs: ## Show logs for all services
-	$(DOCKER_COMPOSE) logs -f
+down-prod: ## Stop prod environment
+	$(PROD) down
 
-logs-django: ## Show logs for the django service
-	$(DOCKER_COMPOSE) logs -f $(DJANGO_SERVICE)
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs: ## Tail logs for all running services
+	$(DC) logs -f
 
-logs-celery: ## Show logs for the celery service
-	$(DOCKER_COMPOSE) logs -f $(CELERY_SERVICE)
+logs-django: ## Tail django / web service logs
+	$(DC) logs -f django web 2>/dev/null || $(DC) logs -f django 2>/dev/null || $(DC) logs -f web
 
-logs-db: ## Show logs for the database service
-	$(DOCKER_COMPOSE) logs -f $(DB_SERVICE)
+logs-celery: ## Tail celery / worker logs
+	$(DC) logs -f celery worker 2>/dev/null || true
 
-logs-redis: ## Show logs for the redis service
-	$(DOCKER_COMPOSE) logs -f $(REDIS_SERVICE)
+logs-db: ## Tail database logs
+	$(DC) logs -f db
 
-# Django management commands
-shell: ## Open Django shell
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py shell
+logs-redis: ## Tail redis logs
+	$(DC) logs -f redis
 
-shell-plus: ## Open Django shell with shell_plus (if available)
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py shell_plus
+# ── Django management ─────────────────────────────────────────────────────────
+shell: ## Open Django shell (dev)
+	$(DEV) exec django python manage.py shell
 
-migrate: ## Run Django migrations
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py migrate
+shell-plus: ## Open Django shell_plus (dev)
+	$(DEV) exec django python manage.py shell_plus
 
-makemigrations: ## Create Django migrations
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py makemigrations
+migrate: ## Run migrations (dev)
+	$(DEV) exec django python manage.py migrate
 
-createsuperuser: ## Create Django superuser
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py createsuperuser
+makemigrations: ## Create migrations (dev)
+	$(DEV) exec django python manage.py makemigrations
 
-collectstatic: ## Collect static files
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py collectstatic --noinput
+createsuperuser: ## Create superuser (dev)
+	$(DEV) exec django python manage.py createsuperuser
 
-# Database commands
-db-shell: ## Open database shell
-	$(DOCKER_COMPOSE) exec $(DB_SERVICE) psql -U postgres -d ecommerce_db
+collectstatic: ## Collect static files (dev)
+	$(DEV) exec django python manage.py collectstatic --noinput
 
-db-backup: ## Backup database
-	$(DOCKER_COMPOSE) exec $(DB_SERVICE) pg_dump -U postgres ecommerce_db > backup_$$(date +%Y%m%d_%H%M%S).sql
+# ── Database ──────────────────────────────────────────────────────────────────
+db-shell: ## Connect to Postgres shell
+	$(DC) exec db psql -U $${DB_USER:-postgres} -d $${DB_NAME:-ecommerce_db}
+
+db-backup: ## Dump database to timestamped SQL file
+	$(DC) exec db pg_dump -U $${DB_USER:-postgres} $${DB_NAME:-ecommerce_db} \
+	  > backup_$$(date +%Y%m%d_%H%M%S).sql
 
 db-restore: ## Restore database (usage: make db-restore FILE=backup.sql)
-	$(DOCKER_COMPOSE) exec -T $(DB_SERVICE) psql -U postgres -d ecommerce_db < $(FILE)
+	$(DC) exec -T db psql -U $${DB_USER:-postgres} -d $${DB_NAME:-ecommerce_db} < $(FILE)
 
-# Redis commands
+# ── Redis ─────────────────────────────────────────────────────────────────────
 redis-cli: ## Open Redis CLI
-	$(DOCKER_COMPOSE) exec $(REDIS_SERVICE) redis-cli
+	$(DC) exec redis redis-cli
 
-redis-flush: ## Flush Redis cache
-	$(DOCKER_COMPOSE) exec $(REDIS_SERVICE) redis-cli FLUSHALL
+redis-flush: ## Flush all Redis keys
+	$(DC) exec redis redis-cli FLUSHALL
 
-# Celery commands
-celery-shell: ## Open Celery shell
-	$(DOCKER_COMPOSE) exec $(CELERY_SERVICE) celery -A api shell
+# ── Celery ────────────────────────────────────────────────────────────────────
+celery-status: ## Show Celery worker status (dev)
+	$(DEV) exec celery celery -A api status
 
-celery-purge: ## Purge all Celery tasks
-	$(DOCKER_COMPOSE) exec $(CELERY_SERVICE) celery -A api purge -f
+celery-purge: ## Purge all queued Celery tasks (dev)
+	$(DEV) exec celery celery -A api purge -f
 
-celery-status: ## Show Celery worker status
-	$(DOCKER_COMPOSE) exec $(CELERY_SERVICE) celery -A api status
+# ── Testing & quality ─────────────────────────────────────────────────────────
+test: ## Run test suite (dev container)
+	$(DEV) exec django $(UV) run python -m pytest
 
-celery-inspect: ## Inspect Celery workers
-	$(DOCKER_COMPOSE) exec $(CELERY_SERVICE) celery -A api inspect stats
+test-coverage: ## Run tests with HTML coverage report
+	$(DEV) exec django $(UV) run python -m pytest --cov=. --cov-report=html
 
-# Package Management with UV
-install: ## Install dependencies with UV
+lint: ## Lint with Ruff
+	$(DEV) exec django $(UV) run ruff check .
+
+lint-fix: ## Lint and auto-fix with Ruff
+	$(DEV) exec django $(UV) run ruff check --fix .
+
+format: ## Format with Ruff
+	$(DEV) exec django $(UV) run ruff format .
+
+format-check: ## Check formatting (CI)
+	$(DEV) exec django $(UV) run ruff format --check .
+
+mypy: ## Type-check with mypy
+	$(DEV) exec django $(UV) run mypy .
+
+check: lint format-check test ## Run all checks (lint + format + tests)
+
+fix: lint-fix format ## Auto-fix all linting and formatting issues
+
+# ── Package management ────────────────────────────────────────────────────────
+install: ## Install dependencies with uv
 	$(UV) pip install -e .
 
-sync: ## Sync dependencies with UV
-	$(UV) pip sync
+sync: ## Sync dependencies from lockfile
+	$(UV) sync
 
-install-dev: ## Install development dependencies
-	$(UV) pip install -e ".[dev]"
-
-add: ## Add a new dependency (usage: make add PACKAGE=package-name)
-	$(UV) add $(PACKAGE)
-
-add-dev: ## Add a new development dependency (usage: make add-dev PACKAGE=package-name)
-	$(UV) add --dev $(PACKAGE)
-
-lock: ## Update lock file
+lock: ## Regenerate uv.lock
 	$(UV) lock
 
-# Testing and quality
-test: ## Run tests
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run python -m pytest
+add: ## Add a dependency (usage: make add PACKAGE=foo==1.2.3)
+	$(UV) add $(PACKAGE)
 
-test-coverage: ## Run tests with coverage
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run python -m pytest --cov=. --cov-report=html
+# ── Utilities ─────────────────────────────────────────────────────────────────
+restart: ## Restart all dev services
+	$(DEV) restart
 
-test-watch: ## Run tests in watch mode
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run python -m pytest --watch
+health: ## Check health endpoints
+	@echo "API:    $$(curl -sf http://localhost:8000/health/ && echo OK || echo DOWN)"
+	@echo "Flower: $$(curl -sf http://localhost:5555/ && echo OK || echo DOWN)"
 
-lint: ## Run linting with Ruff
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run ruff check .
+monitor: ## Print dashboard URLs
+	@echo "Django admin : http://localhost:8000/admin"
+	@echo "API docs     : http://localhost:8000/api/docs"
+	@echo "Flower       : http://localhost:5555"
 
-lint-fix: ## Run linting with auto-fix
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run ruff check --fix .
-
-format: ## Format code with Ruff
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run ruff format .
-
-format-check: ## Check code formatting
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run ruff format --check .
-
-mypy: ## Run type checking with mypy
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run mypy .
-
-pre-commit: ## Run pre-commit hooks
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) $(UV) run pre-commit run --all-files
-
-# Production commands
-prod-build: ## Build production images
-	$(DOCKER_COMPOSE_PROD) build
-
-prod-up: ## Start production environment
-	$(DOCKER_COMPOSE_PROD) up -d
-
-prod-down: ## Stop production environment
-	$(DOCKER_COMPOSE_PROD) down
-
-prod-logs: ## Show production logs
-	$(DOCKER_COMPOSE_PROD) logs -f
-
-# Utility commands
-clean: ## Clean up Docker resources
+clean: ## Remove stopped containers and dangling images
 	docker system prune -f
-	docker volume prune -f
 
-clean-all: ## Clean up all Docker resources (images, volumes, networks)
+clean-all: ## Remove all unused Docker resources (images, volumes, networks)
 	docker system prune -a -f
 	docker volume prune -f
 
-restart: ## Restart all services
-	$(DOCKER_COMPOSE) restart
+# ── First-run setup ───────────────────────────────────────────────────────────
+setup-env: ## Copy env.example → .env (skips if .env exists)
+	@[ -f .env ] && echo ".env already exists" || (cp .env.example .env && echo "Created .env — edit it before running make up")
 
-restart-django: ## Restart django service
-	$(DOCKER_COMPOSE) restart $(DJANGO_SERVICE)
-
-restart-celery: ## Restart celery service
-	$(DOCKER_COMPOSE) restart $(CELERY_SERVICE)
-
-# Health checks
-health: ## Check service health
-	@echo "Checking service health..."
-	@curl -f http://localhost:8000/health/ || echo "Web service not responding"
-	@curl -f http://localhost:5555/ || echo "Flower not responding"
-
-# Development tools
-shell-uv: ## Open UV shell with project dependencies
-	$(UV) shell
-
-run-server: ## Run Django development server with UV
-	$(UV) run python manage.py runserver
-
-run-worker: ## Run Celery worker with UV
-	$(UV) run celery -A api worker --loglevel=info
-
-run-beat: ## Run Celery beat scheduler with UV
-	$(UV) run celery -A api beat --loglevel=info
-
-run-flower: ## Run Flower monitoring with UV
-	$(UV) run celery -A api flower
-
-check: ## Run all checks (lint, format-check, mypy, test)
-	$(MAKE) lint
-	$(MAKE) format-check
-	$(MAKE) mypy
-	$(MAKE) test
-
-fix: ## Fix all auto-fixable issues
-	$(MAKE) lint-fix
-	$(MAKE) format
-
-# Data management
-flush-db: ## Flush database
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py flush --noinput
-
-reset-migrations: ## Reset all migrations (DANGEROUS!)
-	@echo "This will delete all migration files. Are you sure? (y/N)"
-	@read confirm && [ "$$confirm" = "y" ] || exit 1
-	find . -path "*/migrations/*.py" -not -name "__init__.py" -delete
-	find . -path "*/migrations/*.pyc" -delete
-	$(MAKE) makemigrations
-
-seed-data: ## Load seed data
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py loaddata fixtures/initial_data.json
-
-create-fixtures: ## Create fixtures from current data
-	$(DOCKER_COMPOSE) exec $(DJANGO_SERVICE) python manage.py dumpdata --indent=2 > fixtures/current_data.json
-
-# Monitoring
-monitor: ## Open monitoring dashboard
-	@echo "Opening monitoring tools..."
-	@echo "Flower (Celery): http://localhost:5555"
-	@echo "Django Admin: http://localhost:8000/admin"
-	@echo "API Docs: http://localhost:8000/api/docs"
-
-# Setup commands
-setup: ## Initial setup for development
-	@echo "Setting up development environment..."
-	$(MAKE) setup-env
-	$(MAKE) build
-	$(MAKE) up
-	@echo "Waiting for services to start..."
-	@sleep 10
+setup: setup-env up-build ## Full first-run: copy env, build images, start dev, run migrations
+	@echo "Waiting for services..."
+	@sleep 5
 	$(MAKE) migrate
-	$(MAKE) seed-data
-	@echo "Setup complete! Visit http://localhost:8000"
-
-setup-env: ## Create .env file from example
-	@if [ ! -f .env ]; then \
-		cp env.example .env; \
-		echo ".env file created from env.example"; \
-		echo "Please edit .env file with your configuration"; \
-	else \
-		echo ".env file already exists"; \
-	fi
-
-quick-setup: ## Quick setup without building
-	$(MAKE) up
-	$(MAKE) migrate
+	@echo ""
+	@echo "Done!  Visit http://localhost:8000/api/docs"
