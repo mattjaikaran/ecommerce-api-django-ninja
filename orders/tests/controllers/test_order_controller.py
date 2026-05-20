@@ -100,7 +100,7 @@ class TestOrderController:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 3
+        assert len(data["results"]) >= 3
 
     def test_read_order_list_filters(self):
         """Test filtering orders by various criteria."""
@@ -111,7 +111,7 @@ class TestOrderController:
         response = self.client.get(f"/api/orders?status={OrderStatus.PROCESSING}")
         assert response.status_code == 200
         data = response.json()
-        order_ids = [item["id"] for item in data]
+        order_ids = [item["id"] for item in data["results"]]
         assert str(confirmed_order.id) in order_ids
         assert str(draft_order.id) not in order_ids
 
@@ -204,7 +204,7 @@ class TestOrderController:
 
         assert response.status_code == 200
         data = response.json()
-        order_numbers = [item["order_number"] for item in data]
+        order_numbers = [item["order_number"] for item in data["results"]]
         assert order1.order_number in order_numbers
         assert order2.order_number not in order_numbers
 
@@ -217,7 +217,7 @@ class TestOrderController:
 
         assert response.status_code == 200
         data = response.json()
-        order_ids = [item["id"] for item in data]
+        order_ids = [item["id"] for item in data["results"]]
         new_index = order_ids.index(str(new_order.id))
         old_index = order_ids.index(str(old_order.id))
         assert new_index < old_index
@@ -252,7 +252,7 @@ class TestOrderControllerPermissions:
 
         assert response.status_code == 200
         data = response.json()
-        order_ids = [item["id"] for item in data]
+        order_ids = [item["id"] for item in data["results"]]
 
         assert str(own_order.id) in order_ids
         assert str(other_order.id) not in order_ids

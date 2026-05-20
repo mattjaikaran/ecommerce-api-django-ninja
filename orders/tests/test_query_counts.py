@@ -95,12 +95,12 @@ class TestOrderListQueryCount:
 
         # Response should contain at least the 3 orders we created
         total_in_db = OrderModel.objects.count()
-        assert len(data) >= 3, (
-            f"Expected >= 3 orders, got {len(data)}. "
+        assert len(data["results"]) >= 3, (
+            f"Expected >= 3 orders, got {len(data['results'])}. "
             f"DB has {total_in_db} orders total. "
             f"Queries executed: {len(ctx.captured_queries)}."
         )
 
         # Each item in response should have been fetched by prefetch, not lazy load
-        for order_data in data:
+        for order_data in data["results"]:
             assert "items" in order_data

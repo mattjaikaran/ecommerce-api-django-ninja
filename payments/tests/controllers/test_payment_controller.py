@@ -123,6 +123,38 @@ class TestStripeWebhook:
         data = response.json()
         assert data["status"] == "already_processed"
 
+    def test_webhook_valid_signature_queues_event(self, db, client, settings, monkeypatch):
+        """Valid webhook with correct signature is accepted and queued."""
+        import stripe
+
+        settings.STRIPE_WEBHOOK_SECRET = "whsec_test"
+        fake_event = {
+            "id": "evt_valid_queued",
+            "type": "payment_intent.succeeded",
+            "data": {"object": {}},
+        }
+
+        monkeypatch.setattr(stripe.Webhook, "construct_event", lambda *a, **kw: fake_event)
+
+        # Patch Celery task so it doesn't actually run
+        from unittest.mock import MagicMock
+        import payments.tasks as tasks_module
+        mock_task = MagicMock()
+        mock_task.delay = MagicMock()
+        monkeypatch.setattr(tasks_module, "dispatch_stripe_event", mock_task)
+
+        payload = json.dumps(fake_event).encode()
+        response = client.post(
+            "/webhooks/stripe/",
+            data=payload,
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="t=1,v1=valid",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "queued"
+        mock_task.delay.assert_called_once()
+
     def test_webhook_unknown_event_ignored(self, db, client, settings, monkeypatch):
         import stripe
         settings.STRIPE_WEBHOOK_SECRET = "whsec_test"

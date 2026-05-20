@@ -3,6 +3,8 @@
 import logging
 
 from django.shortcuts import get_object_or_404
+from ninja_extra.pagination import PaginatedResponseSchema, paginate
+from ninja.security import django_auth
 from ninja_extra import (
     api_controller,
     http_delete,
@@ -10,12 +12,15 @@ from ninja_extra import (
     http_post,
     http_put,
 )
+from ninja_jwt.authentication import JWTAuth
 
 from api.decorators import (
     create_endpoint,
     delete_endpoint,
     detail_endpoint,
+    handle_exceptions,
     list_endpoint,
+    log_api_call,
     search_and_filter,
     update_endpoint,
 )
@@ -34,12 +39,16 @@ from orders.services import OrderService
 logger = logging.getLogger(__name__)
 
 
-@api_controller("/orders", tags=["Orders"])
+@api_controller("/orders", tags=["Orders"], auth=[JWTAuth(), django_auth])
 class OrderController:
-    @http_get("", response={200: list[OrderSchema], 401: dict, 403: dict})
-    @list_endpoint(
-        select_related=["customer", "customer_group", "billing_address", "shipping_address"],
-        prefetch_related=[
+    @http_get("", response={200: PaginatedResponseSchema[OrderSchema], 401: dict, 403: dict})
+    @handle_exceptions()
+    @log_api_call()
+    @paginate
+    def list_orders(self, request, status: str | None = None, payment_status: str | None = None, search: str | None = None):
+        qs = Order.objects.select_related(
+            "customer", "customer__user", "customer_group", "billing_address", "shipping_address"
+        ).prefetch_related(
             "items__product_variant__product",
             "fulfillments",
             "transactions",
@@ -47,25 +56,21 @@ class OrderController:
             "taxes",
             "notes",
             "history",
-        ],
-        search_fields=["order_number", "email", "customer__user__username"],
-        filter_fields={
-            "status": "exact",
-            "payment_status": "exact",
-            "customer_id": "exact",
-        },
-        ordering_fields=["created_at", "order_number", "total", "status"],
-    )
-    @search_and_filter(
-        search_fields=["order_number", "email", "customer__user__username"],
-        filter_fields={"status": "exact", "payment_status": "exact"},
-        ordering_fields=["created_at", "order_number", "total"],
-    )
-    def list_orders(self, request):
-        qs = Order.objects.all()
+        )
         if not request.user.is_staff:
             qs = qs.filter(customer__user=request.user)
-        return 200, qs
+        if status:
+            qs = qs.filter(status=status)
+        if payment_status:
+            qs = qs.filter(payment_status=payment_status)
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(order_number__icontains=search)
+                | Q(email__icontains=search)
+                | Q(customer__user__username__icontains=search)
+            )
+        return qs.order_by("-created_at")
 
     @http_get("/{order_id}", response={200: OrderSchema, 401: dict, 403: dict, 404: dict})
     @detail_endpoint(

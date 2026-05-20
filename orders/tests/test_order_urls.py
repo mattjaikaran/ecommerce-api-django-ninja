@@ -25,4 +25,4 @@ class TestOrderURLs:
         c.force_login(self.user)
         response = c.get("/api/orders")
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        assert "results" in response.json()

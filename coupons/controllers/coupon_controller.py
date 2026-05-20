@@ -1,9 +1,10 @@
 from decimal import Decimal
 
 from django.shortcuts import get_object_or_404
-from ninja.pagination import paginate
+from ninja_extra.pagination import PaginatedResponseSchema, paginate
+from ninja.security import django_auth
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
-from ninja_extra.permissions import IsAuthenticated
+from ninja_jwt.authentication import JWTAuth
 
 from api.decorators import handle_exceptions, log_api_call
 from api.exceptions import ValidationError
@@ -21,12 +22,11 @@ from coupons.services import CouponService
 from orders.models import Order
 
 
-@api_controller("/coupons", tags=["Coupons"])
+@api_controller("/coupons", tags=["Coupons"], auth=[JWTAuth(), django_auth])
 class CouponController:
-    permission_classes = [IsAuthenticated]
 
-    @http_get("", response={200: list[CouponSchema]})
-    @handle_exceptions
+    @http_get("", response={200: PaginatedResponseSchema[CouponSchema], 401: dict, 403: dict})
+    @handle_exceptions()
     @log_api_call()
     @paginate
     def list_coupons(self, request, is_active: bool | None = None):
@@ -35,15 +35,8 @@ class CouponController:
             qs = qs.filter(is_active=is_active)
         return qs.order_by("-created_at")
 
-    @http_get("/{coupon_id}", response={200: CouponSchema})
-    @handle_exceptions
-    @log_api_call()
-    def get_coupon(self, request, coupon_id: str):
-        coupon = get_object_or_404(Coupon, id=coupon_id, is_deleted=False)
-        return 200, coupon
-
-    @http_post("", response={201: CouponSchema})
-    @handle_exceptions
+    @http_post("", response={201: CouponSchema, 400: dict, 401: dict, 403: dict, 409: dict})
+    @handle_exceptions()
     @log_api_call()
     def create_coupon(self, request, payload: CouponCreateSchema):
         if Coupon.objects.filter(code=payload.code.upper(), is_deleted=False).exists():
@@ -51,27 +44,9 @@ class CouponController:
         coupon = CouponService.create_coupon(payload, request.user)
         return 201, coupon
 
-    @http_put("/{coupon_id}", response={200: CouponSchema})
-    @handle_exceptions
-    @log_api_call()
-    def update_coupon(self, request, coupon_id: str, payload: CouponUpdateSchema):
-        coupon = get_object_or_404(Coupon, id=coupon_id, is_deleted=False)
-        coupon = CouponService.update_coupon(coupon, payload, request.user)
-        return 200, coupon
-
-    @http_delete("/{coupon_id}", response={204: None})
-    @handle_exceptions
-    @log_api_call()
-    def delete_coupon(self, request, coupon_id: str):
-        coupon = get_object_or_404(Coupon, id=coupon_id, is_deleted=False)
-        coupon.is_deleted = True
-        coupon.is_active = False
-        coupon.updated_by = request.user
-        coupon.save(update_fields=["is_deleted", "is_active", "updated_at", "updated_by"])
-        return 204, None
-
-    @http_post("/validate", response={200: CouponValidateResponseSchema})
-    @handle_exceptions
+    # Exact-path POST routes must come before /{coupon_id} to avoid routing conflicts
+    @http_post("/validate", response={200: CouponValidateResponseSchema, 401: dict, 403: dict})
+    @handle_exceptions()
     @log_api_call()
     def validate_coupon(self, request, payload: CouponValidateSchema):
         """Preview the discount without consuming the coupon."""
@@ -95,8 +70,8 @@ class CouponController:
                 message=str(e),
             )
 
-    @http_post("/apply", response={200: dict})
-    @handle_exceptions
+    @http_post("/apply", response={200: dict, 400: dict, 401: dict, 403: dict, 404: dict})
+    @handle_exceptions()
     @log_api_call()
     def apply_coupon(self, request, payload: ApplyCouponSchema):
         """Apply a coupon to an existing order."""
@@ -114,8 +89,34 @@ class CouponController:
             "new_total": str(order.total),
         }
 
-    @http_get("/{coupon_id}/usages", response={200: list[CouponUsageSchema]})
-    @handle_exceptions
+    @http_get("/{coupon_id}", response={200: CouponSchema, 401: dict, 403: dict, 404: dict})
+    @handle_exceptions()
+    @log_api_call()
+    def get_coupon(self, request, coupon_id: str):
+        coupon = get_object_or_404(Coupon, id=coupon_id, is_deleted=False)
+        return 200, coupon
+
+    @http_put("/{coupon_id}", response={200: CouponSchema, 400: dict, 401: dict, 403: dict, 404: dict})
+    @handle_exceptions()
+    @log_api_call()
+    def update_coupon(self, request, coupon_id: str, payload: CouponUpdateSchema):
+        coupon = get_object_or_404(Coupon, id=coupon_id, is_deleted=False)
+        coupon = CouponService.update_coupon(coupon, payload, request.user)
+        return 200, coupon
+
+    @http_delete("/{coupon_id}", response={204: None, 401: dict, 403: dict, 404: dict})
+    @handle_exceptions()
+    @log_api_call()
+    def delete_coupon(self, request, coupon_id: str):
+        coupon = get_object_or_404(Coupon, id=coupon_id, is_deleted=False)
+        coupon.is_deleted = True
+        coupon.is_active = False
+        coupon.updated_by = request.user
+        coupon.save(update_fields=["is_deleted", "is_active", "updated_at", "updated_by"])
+        return 204, None
+
+    @http_get("/{coupon_id}/usages", response={200: PaginatedResponseSchema[CouponUsageSchema], 401: dict, 403: dict, 404: dict})
+    @handle_exceptions()
     @log_api_call()
     @paginate
     def get_coupon_usages(self, request, coupon_id: str):

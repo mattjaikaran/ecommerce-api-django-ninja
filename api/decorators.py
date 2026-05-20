@@ -14,6 +14,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, models
 from django.db.models import Q, QuerySet
 from django.http import Http404, HttpRequest
+from ninja.errors import HttpError as NinjaHttpError
 
 from .config.constants import CACHE_TIMEOUT_MEDIUM, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from .exceptions import (
@@ -37,43 +38,53 @@ HTTP_OK = 200
 TUPLE_RESPONSE_LENGTH = 2
 
 
-def handle_exceptions(func: Callable) -> Callable:
+def handle_exceptions(_func: Callable | None = None, *, return_500_on_error: bool = True) -> Callable:
     """Comprehensive exception handler decorator.
 
+    Usable as @handle_exceptions or @handle_exceptions().
     Handles all exceptions and returns appropriate HTTP responses
     without exposing internal details in production.
     """
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except BaseAPIException as e:
-            logger.warning("API Exception in %s: %s", func.__name__, e.message)
-            return e.status_code, e.to_dict()
-        except (models.ObjectDoesNotExist, Http404):
-            error = NotFoundError("Resource not found")
-            return error.status_code, error.to_dict()
-        except IntegrityError as e:
-            logger.warning("Integrity error in %s: %s", func.__name__, e)
-            from .exceptions import ConflictError
-            error = ConflictError("A resource with that value already exists")
-            return error.status_code, error.to_dict()
-        except ValidationError as e:
-            logger.warning("Validation error in %s: %s", func.__name__, e)
-            return e.status_code, e.to_dict()
-        except DjangoValidationError as e:
-            logger.warning("Django validation error in %s: %s", func.__name__, e)
-            msgs = list(e.messages) if hasattr(e, "messages") else [str(e)]
-            from .exceptions import ValidationError as APIValidationError
-            api_err = APIValidationError(msgs[0] if msgs else "Validation error")
-            return api_err.status_code, api_err.to_dict()
-        except Exception:
-            logger.exception("Unhandled exception in %s", func.__name__)
-            error = BaseAPIException("An internal error occurred")
-            return error.status_code, error.to_dict()
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except BaseAPIException as e:
+                logger.warning("API Exception in %s: %s", func.__name__, e.message)
+                return e.status_code, e.to_dict()
+            except (models.ObjectDoesNotExist, Http404):
+                error = NotFoundError("Resource not found")
+                return error.status_code, error.to_dict()
+            except IntegrityError as e:
+                logger.warning("Integrity error in %s: %s", func.__name__, e)
+                from .exceptions import ConflictError
+                error = ConflictError("A resource with that value already exists")
+                return error.status_code, error.to_dict()
+            except ValidationError as e:
+                logger.warning("Validation error in %s: %s", func.__name__, e)
+                return e.status_code, e.to_dict()
+            except DjangoValidationError as e:
+                logger.warning("Django validation error in %s: %s", func.__name__, e)
+                msgs = list(e.messages) if hasattr(e, "messages") else [str(e)]
+                from .exceptions import ValidationError as APIValidationError
+                api_err = APIValidationError(msgs[0] if msgs else "Validation error")
+                return api_err.status_code, api_err.to_dict()
+            except NinjaHttpError:
+                raise
+            except Exception:
+                if return_500_on_error:
+                    logger.exception("Unhandled exception in %s", func.__name__)
+                    error = BaseAPIException("An internal error occurred")
+                    return error.status_code, error.to_dict()
+                raise
 
-    return wrapper
+        return wrapper
+
+    if _func is not None:
+        return decorator(_func)
+    return decorator
 
 
 def log_api_call(
@@ -91,10 +102,10 @@ def log_api_call(
 
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(self, *args, **kwargs):
             start_time = time.time()
 
-            # Extract request info — check kwargs first (Ninja Extra passes request as kwarg)
+            # Extract request from args or kwargs
             request = kwargs.get("request")
             if request is None:
                 for arg in args:
@@ -105,42 +116,27 @@ def log_api_call(
                         request = arg.request
                         break
 
-            # Log request
             if request:
                 client_ip = get_client_ip(request)
                 user = getattr(request, "user", None)
                 user_info = f"user={user.username if user and user.is_authenticated else 'anonymous'}"
-
-                log_message = (
-                    f"API Call: {func.__name__} | {user_info} | IP={client_ip}"
-                )
-
+                log_message = f"API Call: {func.__name__} | {user_info} | IP={client_ip}"
                 if include_request_data and hasattr(request, "data"):
                     log_message += f" | Request: {request.data}"
-
                 logger.log(log_level, log_message)
 
-            # Execute function
             try:
-                result = func(*args, **kwargs)
+                result = func(self, *args, **kwargs)
             except Exception:
                 execution_time = time.time() - start_time
-                logger.exception(
-                    "API Error: %s | Time=%.3fs", func.__name__, execution_time
-                )
+                logger.exception("API Error: %s | Time=%.3fs", func.__name__, execution_time)
                 raise
             else:
-                # Log response
                 execution_time = time.time() - start_time
-                log_message = (
-                    f"API Success: {func.__name__} | Time={execution_time:.3f}s"
-                )
-
+                log_message = f"API Success: {func.__name__} | Time={execution_time:.3f}s"
                 if include_response_data:
                     log_message += f" | Response: {result}"
-
                 logger.log(log_level, log_message)
-
                 return result
 
         return wrapper

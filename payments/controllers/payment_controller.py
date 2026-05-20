@@ -4,13 +4,18 @@ import logging
 from uuid import UUID
 
 from django.shortcuts import get_object_or_404
+from ninja_extra.pagination import PaginatedResponseSchema, paginate
+from ninja.security import django_auth
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
+from ninja_jwt.authentication import JWTAuth
 
 from api.decorators import (
     create_endpoint,
     delete_endpoint,
     detail_endpoint,
+    handle_exceptions,
     list_endpoint,
+    log_api_call,
     update_endpoint,
 )
 from payments.models import PaymentMethod, PaymentRefund, PaymentTransaction
@@ -25,18 +30,17 @@ from payments.schemas import (
 logger = logging.getLogger(__name__)
 
 
-@api_controller("/payments", tags=["Payments"])
+@api_controller("/payments", tags=["Payments"], auth=[JWTAuth(), django_auth])
 class PaymentController:
 
-    @http_get("/methods", response={200: list[PaymentMethodSchema], 401: dict, 403: dict})
-    @list_endpoint(
-        select_related=["customer__user"],
-        search_fields=["card_brand", "last_four", "provider"],
-        filter_fields={"provider": "exact", "is_default": "boolean", "is_active": "boolean"},
-        ordering_fields=["created_at", "provider", "is_default"],
-    )
+    @http_get("/methods", response={200: PaginatedResponseSchema[PaymentMethodSchema], 401: dict, 403: dict})
+    @handle_exceptions()
+    @log_api_call()
+    @paginate
     def list_payment_methods(self, request):
-        return 200, PaymentMethod.objects.filter(is_active=True, customer__user=request.user)
+        return PaymentMethod.objects.select_related("customer__user").filter(
+            is_active=True, customer__user=request.user
+        ).order_by("-created_at")
 
     @http_get("/methods/{payment_method_id}", response={200: PaymentMethodSchema, 401: dict, 403: dict, 404: dict})
     @detail_endpoint(select_related=["customer__user"])
@@ -71,14 +75,14 @@ class PaymentController:
 
     # Transactions (read-only for users)
 
-    @http_get("/transactions", response={200: list[PaymentTransactionSchema], 401: dict, 403: dict})
-    @list_endpoint(
-        select_related=["order", "payment_method"],
-        filter_fields={"status": "exact", "gateway": "exact", "order_id": "exact"},
-        ordering_fields=["created_at", "amount", "status"],
-    )
+    @http_get("/transactions", response={200: PaginatedResponseSchema[PaymentTransactionSchema], 401: dict, 403: dict})
+    @handle_exceptions()
+    @log_api_call()
+    @paginate
     def list_transactions(self, request):
-        return 200, PaymentTransaction.objects.filter(order__customer__user=request.user)
+        return PaymentTransaction.objects.select_related(
+            "order", "payment_method"
+        ).filter(order__customer__user=request.user).order_by("-created_at")
 
     @http_get("/transactions/{transaction_id}", response={200: PaymentTransactionSchema, 401: dict, 403: dict, 404: dict})
     @detail_endpoint(select_related=["order", "payment_method"])

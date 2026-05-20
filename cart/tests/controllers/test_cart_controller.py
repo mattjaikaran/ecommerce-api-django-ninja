@@ -54,7 +54,7 @@ class TestCartController:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 3
+        assert len(data["results"]) >= 3
 
     def test_read_cart_list_filters(self):
         """Test filtering carts by various criteria."""
@@ -65,7 +65,7 @@ class TestCartController:
         response = self.client.get("/api/carts?is_active=true")
         assert response.status_code == 200
         data = response.json()
-        cart_ids = [item["id"] for item in data]
+        cart_ids = [item["id"] for item in data["results"]]
         assert str(active_cart.id) in cart_ids
         assert str(inactive_cart.id) not in cart_ids
 
@@ -201,7 +201,7 @@ class TestCartControllerPermissions:
 
         assert response.status_code == 200
         data = response.json()
-        cart_ids = [item["id"] for item in data]
+        cart_ids = [item["id"] for item in data["results"]]
 
         assert str(own_cart.id) in cart_ids
         assert str(other_cart.id) not in cart_ids
@@ -228,3 +228,46 @@ class TestCartControllerPermissions:
         )
 
         assert response.status_code == 404  # Should not be found due to filtering
+
+    def test_user_cannot_add_item_to_other_users_cart(self):
+        """Test that users cannot add items to another user's cart."""
+        from products.tests.factories import ProductVariantFactory
+
+        other_cart = CartFactory(customer=self.other_customer)
+        variant = ProductVariantFactory()
+
+        self.client.force_login(self.user)
+        response = self.client.post(
+            f"/api/carts/{other_cart.id}/items",
+            data={"product_variant_id": str(variant.id), "quantity": 1},
+            content_type="application/json",
+        )
+
+        # Cart belongs to other_customer — should return 404 (not found) or 403 (forbidden)
+        assert response.status_code in (403, 404)
+
+    def test_user_cannot_remove_item_from_other_users_cart(self):
+        """Test that users cannot remove items from another user's cart."""
+        other_cart = CartFactory(customer=self.other_customer)
+        other_item = CartItemFactory(cart=other_cart)
+
+        self.client.force_login(self.user)
+        response = self.client.delete(
+            f"/api/carts/{other_cart.id}/items/{other_item.id}"
+        )
+
+        assert response.status_code in (403, 404)
+
+    def test_user_cannot_update_item_in_other_users_cart(self):
+        """Test that users cannot update items in another user's cart."""
+        other_cart = CartFactory(customer=self.other_customer)
+        other_item = CartItemFactory(cart=other_cart)
+
+        self.client.force_login(self.user)
+        response = self.client.put(
+            f"/api/carts/{other_cart.id}/items/{other_item.id}",
+            data={"quantity": 99},
+            content_type="application/json",
+        )
+
+        assert response.status_code in (403, 404)

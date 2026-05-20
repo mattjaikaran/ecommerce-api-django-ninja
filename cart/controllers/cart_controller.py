@@ -4,13 +4,19 @@ import logging
 from uuid import UUID
 
 from django.shortcuts import get_object_or_404
+from ninja.errors import HttpError
+from ninja_extra.pagination import PaginatedResponseSchema, paginate
+from ninja.security import django_auth
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
+from ninja_jwt.authentication import JWTAuth
 
 from api.decorators import (
     create_endpoint,
     delete_endpoint,
     detail_endpoint,
+    handle_exceptions,
     list_endpoint,
+    log_api_call,
     search_and_filter,
     update_endpoint,
 )
@@ -28,26 +34,19 @@ from cart.services import CartService
 logger = logging.getLogger(__name__)
 
 
-@api_controller("/carts", tags=["Carts"])
+@api_controller("/carts", tags=["Carts"], auth=[JWTAuth(), django_auth])
 class CartController:
-    @http_get("", response={200: list[CartSchema], 401: dict, 403: dict})
-    @list_endpoint(
-        select_related=["customer__user"],
-        prefetch_related=["items__product_variant__product"],
-        search_fields=["session_key", "customer__user__username", "customer__user__email"],
-        filter_fields={"is_active": "boolean", "customer_id": "exact"},
-        ordering_fields=["created_at", "updated_at", "total_price"],
-    )
-    @search_and_filter(
-        search_fields=["session_key", "customer__user__username"],
-        filter_fields={"is_active": "boolean", "customer_id": "exact"},
-        ordering_fields=["created_at", "updated_at"],
-    )
-    def list_carts(self, request):
-        qs = Cart.objects.filter(is_active=True)
+    @http_get("", response={200: PaginatedResponseSchema[CartSchema], 401: dict, 403: dict})
+    @handle_exceptions()
+    @log_api_call()
+    @paginate
+    def list_carts(self, request, is_active: bool = True):
+        qs = Cart.objects.select_related("customer__user").prefetch_related(
+            "items__product_variant__product"
+        ).filter(is_active=is_active)
         if not request.user.is_staff:
             qs = qs.filter(customer__user=request.user)
-        return 200, qs
+        return qs.order_by("-created_at")
 
     @http_get("/{cart_id}", response={200: CartSchema, 404: dict, 401: dict, 403: dict})
     @detail_endpoint(
@@ -111,6 +110,9 @@ class CartController:
     @create_endpoint(require_auth=False)
     def add_cart_item(self, request, cart_id: UUID, payload: CartItemCreateSchema):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
+        if request.user.is_authenticated and not request.user.is_staff:
+            if cart.customer and cart.customer.user != request.user:
+                raise HttpError(403, "Forbidden")
         item = CartService.add_item(cart, payload, request.user)
         return 201, CartItemSchema.from_orm(item)
 
@@ -118,6 +120,9 @@ class CartController:
     @update_endpoint(require_auth=False)
     def update_cart_item(self, request, cart_id: UUID, item_id: UUID, payload: CartItemUpdateSchema):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
+        if request.user.is_authenticated and not request.user.is_staff:
+            if cart.customer and cart.customer.user != request.user:
+                raise HttpError(403, "Forbidden")
         item = get_object_or_404(CartItem, id=item_id, cart=cart)
         return 200, CartItemSchema.from_orm(CartService.update_item(cart, item, payload, request.user))
 
@@ -125,6 +130,9 @@ class CartController:
     @delete_endpoint(require_auth=False)
     def remove_cart_item(self, request, cart_id: UUID, item_id: UUID):
         cart = get_object_or_404(Cart, id=cart_id, is_active=True)
+        if request.user.is_authenticated and not request.user.is_staff:
+            if cart.customer and cart.customer.user != request.user:
+                raise HttpError(403, "Forbidden")
         item = get_object_or_404(CartItem, id=item_id, cart=cart)
         CartService.remove_item(cart, item)
         return 204, None
