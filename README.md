@@ -507,3 +507,35 @@ $ psql my_db # enter shell
 $ createdb --username=USERNAME my_db # create db
 $ dropdb my_db # drop db
 ```
+## Benchmarks
+
+Load-test results measured with [Locust](https://locust.io/) against the dev
+stack. The suite lives in `loadtests/locustfile.py` and seeds its own catalog
+(25 active products, 37 variants) before ramping simulated shoppers.
+
+Run parameters: 20 concurrent users, ramp-up 2 users/s, 5-minute duration,
+headless mode. Hardware: Apple M2 Pro, macOS 24.6. Stack: Django dev server
+(runserver, the compose dev profile command), PostgreSQL 17 and Redis 7.2 in
+Docker, Celery 5 configured. Product list and detail are Redis-cached: list
+for 300s, detail for 600s.
+
+Product endpoints require an authenticated Django session per the API design
+(`require_authentication`); each simulated user mints a session and JWT at
+ramp-up. On this machine ports 8000/5432/6379 were occupied by other projects,
+so the API ran on port 8002 against Dockerized PostgreSQL 17 (port 5435) and
+Redis 7.2 (port 6381).
+
+| Endpoint | Requests | p50 (ms) | p95 (ms) | p99 (ms) | Error rate |
+|---|---:|---:|---:|---:|---:|
+| GET /api/products | 821 | 120 | 790 | 1600 | 0.0% |
+| GET /api/products/{id} | 537 | 31 | 170 | 400 | 0.0% |
+| POST /api/carts | 20 | 110 | 260 | 260 | 0.0% |
+| POST /api/carts/{id}/items | 505 | 57 | 280 | 560 | 0.0% |
+| POST /api/orders | 844 | 75 | 400 | 800 | 0.0% |
+| POST /api/orders/{id}/submit | 593 | 68 | 350 | 820 | 0.0% |
+| Aggregated | 3320 | 71 | 430 | 1000 | 0.0% |
+
+`POST /api/carts` appears only 20 times because each simulated user creates
+one cart during ramp-up (setup request) before the timed scenarios start.
+Raw results: `loadtests/results/run1_stats.csv`. Re-run with `make bench` or
+`make bench HOST=http://localhost:8002`.

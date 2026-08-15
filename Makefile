@@ -3,8 +3,7 @@
         shell shell-plus migrate makemigrations createsuperuser collectstatic \
         db-shell db-backup db-restore redis-cli redis-flush \
         celery-shell celery-purge celery-status \
-        test test-coverage lint lint-fix format format-check mypy check fix \
-        clean clean-all restart health monitor setup setup-env \
+        test test-coverage lint lint-fix format format-check mypy check fix bench \
         install sync lock add
 
 DC      = docker compose
@@ -125,6 +124,16 @@ mypy: ## Type-check with mypy
 check: lint format-check test ## Run all checks (lint + format + tests)
 
 fix: lint-fix format ## Auto-fix all linting and formatting issues
+
+# ── Benchmarking ─────────────────────────────────────────────────────────────
+# Load-test the API with Locust against the running dev stack.
+# Defaults: 20 users, ramp-up 2/s, 5 minutes, http://localhost:8000.
+# Override the target host with `make bench HOST=http://localhost:8002`.
+# Writes stats to loadtests/results/run1_stats.csv.
+bench: ## Run headless Locust benchmark (20 users, 2/s ramp, 5m)
+	uv run locust --headless -u 20 -r 2 -t 5m \
+	  --host $(or $(HOST),http://localhost:8000) \
+	  -f loadtests/locustfile.py --csv loadtests/results/run1
 
 # ── Package management ────────────────────────────────────────────────────────
 install: ## Install dependencies with uv
