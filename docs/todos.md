@@ -2,20 +2,25 @@
 
 ## Current State (verified 2026-08-15)
 
-- 204 tests pass
+- 340 tests pass
 - 58% coverage across 11,046 statements
 - All apps enabled: core, products, cart, orders, analytics, payments,
-  coupons, outbound_webhooks, feature_flags, gift_cards, subscriptions
+  coupons, outbound_webhooks, feature_flags, gift_cards, subscriptions,
+  wishlist, loyalty
 - CI/CD runs lint (ruff), tests (pytest on Postgres 17 + Redis 7.2), builds
   a GHCR image, and deploys via SSH on push to main
 - Stripe webhook endpoint active with signature verification and idempotent
   event log
 - Service layers: OrderService, CartService, PaymentService, CouponService,
-  GiftCardService, SubscriptionService, FeatureFlagService, WebhookService
+  GiftCardService, SubscriptionService, FeatureFlagService, WebhookService,
+  WishlistService, LoyaltyService, ProductService
+- Weighted full-text product search (name A / description B / tags C)
+  with SearchRank relevance ordering
+- Loyalty points ledger with earn-on-COMPLETED Celery task and redeem
+- Wishlist app with per-customer wishlists and idempotent add
 - N+1 query guards: order and product list query-count tests
 - Passwordless login (OTP) with rate throttling on login
 - OpenTelemetry setup gated by `OTEL_ENABLED`
-- Sentry, structured logging, Celery + beat, and DLQ wired
 
 ## Roadmap
 
@@ -48,22 +53,25 @@ deprecation policy. Not part of the current plan.
 
 Visible features that complete the storefront story.
 
-- [ ] Wishlist app
-  - `Wishlist` model: customer, product variants
-  - `WishlistItem` model with created_at ordering
-  - Controller: list, add, remove, clear, check membership
-  - Use the existing `wishlist_updated` error message constant
-  - Tests: ownership, duplicates, remove non-member item
-- [ ] Loyalty points
-  - Points awarded per order total; configurable rate
-  - Redeem points against an order; points ledger with history
+- [x] Wishlist app
+  - `Wishlist` model: one per customer, with items
+  - `WishlistItem` model: variant, quantity, notes; unique per
+    (wishlist, variant); created_at ordering
+  - Controller: list, add, remove, clear, check membership; ownership
+    resolved strictly from request.user
+  - Uses the existing `wishlist_updated` error message constant
+  - Tests: ownership, duplicates, remove non-member item (30 tests)
+- [x] Loyalty points
+  - Points awarded per order total; rate constant
+    `LOYALTY_POINTS_PER_DOLLAR`
+  - Redeem points against an order; signed ledger with history
   - Controller: balance, history, redeem
-  - Celery task to credit points after order completion
-  - Tests: earn, redeem, insufficient balance, concurrent redemption
-- [ ] Search enhancements
-  - Weighted full-text search on products (name > description > tags)
-  - Highlight snippets and relevance ordering
-  - Later: pgvector semantic search as a P4/ML item
+  - Celery task credits points after order completion, wired into
+    `OrderService.transition_order`; dedupe per order (partial unique
+    constraint)
+  - Tests: earn, redeem, insufficient balance, no double credit (28
+    tests)
+
 
 ### Theme D — Performance and observability
 
