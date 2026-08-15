@@ -131,13 +131,13 @@ class OrderController:
         OrderService.remove_item(order, item, request.user)
         return 204, None
 
-    @http_post("/{order_id}/submit", response={200: OrderSchema, 400: dict, 404: dict})
+    @http_post("/{order_id}/submit", response={200: OrderSchema, 400: dict, 404: dict, 409: dict})
     @update_endpoint()
     def submit_order(self, request, order_id: str):
         order = get_object_or_404(Order, id=order_id)
         return 200, OrderService.submit_order(order, request.user)
 
-    @http_post("/{order_id}/cancel", response={200: OrderSchema, 400: dict, 404: dict})
+    @http_post("/{order_id}/cancel", response={200: OrderSchema, 400: dict, 404: dict, 409: dict})
     @update_endpoint()
     def cancel_order(self, request, order_id: str):
         order = get_object_or_404(Order, id=order_id)

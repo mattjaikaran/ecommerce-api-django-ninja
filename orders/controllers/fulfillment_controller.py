@@ -102,11 +102,22 @@ class FulfillmentController:
             order_item.save()
 
         # Update order status if all items are fulfilled
+        from orders.services import OrderService
+
         if all(item.quantity == item.fulfilled_quantity for item in order.items.all()):
-            order.status = OrderStatus.SHIPPED
+            OrderService.transition_order(
+                order,
+                OrderStatus.SHIPPED,
+                request.user,
+                notes="Fulfillment created",
+            )
         else:
-            order.status = OrderStatus.PARTIALLY_SHIPPED
-        order.save()
+            OrderService.transition_order(
+                order,
+                OrderStatus.PARTIALLY_SHIPPED,
+                request.user,
+                notes="Fulfillment created",
+            )
 
         return 201, fulfillment
 
@@ -133,13 +144,19 @@ class FulfillmentController:
         fulfillment.save()
 
         # If status is updated to SHIPPED, update order status
+        from orders.services import OrderService
+
         if payload.status == FulfillmentStatus.SHIPPED:
             order = fulfillment.order
             if all(
                 f.status == FulfillmentStatus.SHIPPED for f in order.fulfillments.all()
             ):
-                order.status = OrderStatus.SHIPPED
-                order.save()
+                OrderService.transition_order(
+                    order,
+                    OrderStatus.SHIPPED,
+                    request.user,
+                    notes="Fulfillment shipped",
+                )
 
         return 200, fulfillment
 
@@ -162,13 +179,24 @@ class FulfillmentController:
             order_item.save()
 
         # Update order status
+        from orders.services import OrderService
+
         order = fulfillment.order
         if order.status in [OrderStatus.SHIPPED, OrderStatus.PARTIALLY_SHIPPED]:
             if any(item.fulfilled_quantity > 0 for item in order.items.all()):
-                order.status = OrderStatus.PARTIALLY_SHIPPED
+                OrderService.transition_order(
+                    order,
+                    OrderStatus.PARTIALLY_SHIPPED,
+                    request.user,
+                    notes="Fulfillment deleted",
+                )
             else:
-                order.status = OrderStatus.PENDING
-            order.save()
+                OrderService.transition_order(
+                    order,
+                    OrderStatus.PENDING,
+                    request.user,
+                    notes="Fulfillment deleted",
+                )
 
         fulfillment.delete()
         return 204, None
@@ -193,10 +221,16 @@ class FulfillmentController:
         fulfillment.save()
 
         # Update order status
+        from orders.services import OrderService
+
         order = fulfillment.order
         if all(f.status == FulfillmentStatus.SHIPPED for f in order.fulfillments.all()):
-            order.status = OrderStatus.SHIPPED
-            order.save()
+            OrderService.transition_order(
+                order,
+                OrderStatus.SHIPPED,
+                request.user,
+                notes="Fulfillment shipped",
+            )
 
         return 200, fulfillment
 
@@ -228,11 +262,22 @@ class FulfillmentController:
             order_item.save()
 
         # Update order status
+        from orders.services import OrderService
+
         order = fulfillment.order
         if any(item.fulfilled_quantity > 0 for item in order.items.all()):
-            order.status = OrderStatus.PARTIALLY_SHIPPED
+            OrderService.transition_order(
+                order,
+                OrderStatus.PARTIALLY_SHIPPED,
+                request.user,
+                notes="Fulfillment cancelled",
+            )
         else:
-            order.status = OrderStatus.PENDING
-        order.save()
+            OrderService.transition_order(
+                order,
+                OrderStatus.PENDING,
+                request.user,
+                notes="Fulfillment cancelled",
+            )
 
         return 200, fulfillment

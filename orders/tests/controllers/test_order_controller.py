@@ -249,6 +249,27 @@ class TestOrderController:
         order.refresh_from_db()
         assert order.status == OrderStatus.CANCELLED
 
+    def test_submit_non_draft_order_returns_409(self):
+        """Test that invalid status transition returns 409."""
+        order = ConfirmedOrderFactory(customer=self.customer)
+        OrderLineItemFactory(order=order)
+        response = self.client.post(f"/api/orders/{order.id}/submit")
+
+        assert response.status_code == 409
+        order.refresh_from_db()
+        assert order.status == OrderStatus.PROCESSING
+
+    def test_cancel_records_order_history(self):
+        """Test that cancelling an order records a history entry."""
+        order = OrderFactory(customer=self.customer, status=OrderStatus.PENDING)
+
+        response = self.client.post(f"/api/orders/{order.id}/cancel")
+
+        assert response.status_code == 200
+        history = order.history.first()
+        assert history.status == OrderStatus.CANCELLED
+        assert history.old_status == OrderStatus.PENDING
+
     def test_delete_order(self):
         """Test deleting an order (soft delete)."""
         order = OrderFactory(customer=self.customer)
@@ -416,4 +437,4 @@ class TestOrderControllerPermissions:
         self.client.force_login(self.user)
         response = self.client.post(f"/api/orders/{order.id}/cancel")
 
-        assert response.status_code == 400
+        assert response.status_code == 409

@@ -6,13 +6,20 @@ import uuid
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.utils import timezone
 
 from api.config.constants import IDEMPOTENCY_KEY_TTL_HOURS
 from api.exceptions import ConflictError, NotFoundError, ValidationError
 from core.models import Customer
-from orders.models import IdempotencyKey, Order, OrderLineItem, OrderStatus
+from orders.models import (
+    IdempotencyKey,
+    Order,
+    OrderHistory,
+    OrderLineItem,
+    OrderStatus,
+)
+from orders.models.choices import ORDER_STATUS_TRANSITIONS
 from orders.schemas import (
     OrderCreateSchema,
     OrderLineItemCreateSchema,
@@ -64,58 +71,46 @@ class OrderService:
             key_hash = OrderService._hash_idempotency_key(idempotency_key)
             request_hash = OrderService._hash_request_payload(payload)
 
-            try:
-                with transaction.atomic():
-                    # An expired claim is reusable: drop it before claiming.
-                    IdempotencyKey.objects.filter(
-                        key_hash=key_hash,
-                        user=request_user,
-                        expires_at__lte=timezone.now(),
-                    ).delete()
+            # An expired claim is reusable: drop it before claiming.
+            IdempotencyKey.objects.filter(
+                key_hash=key_hash,
+                user=request_user,
+                expires_at__lte=timezone.now(),
+            ).delete()
 
-                    key_record, key_created = IdempotencyKey.objects.get_or_create(
-                        key_hash=key_hash,
-                        user=request_user,
-                        defaults={
-                            "request_hash": request_hash,
-                            "expires_at": timezone.now()
-                            + timedelta(hours=IDEMPOTENCY_KEY_TTL_HOURS),
-                        },
-                    )
+            # get_or_create is race-safe under the unique (key_hash, user)
+            # constraint: the losing concurrent request catches IntegrityError
+            # internally, re-fetches, and returns the winner's record.
+            key_record, key_created = IdempotencyKey.objects.get_or_create(
+                key_hash=key_hash,
+                user=request_user,
+                defaults={
+                    "request_hash": request_hash,
+                    "expires_at": timezone.now()
+                    + timedelta(hours=IDEMPOTENCY_KEY_TTL_HOURS),
+                },
+            )
 
-                    if not key_created:
-                        if key_record.request_hash != request_hash:
-                            raise ConflictError(
-                                "Idempotency key reused with a different payload"
-                            )
-                        if key_record.order_id is None:
-                            # A request is in flight but the order does not
-                            # exist yet. Return the key so the caller can
-                            # retry after a short delay.
-                            raise ConflictError(
-                                "Request with this idempotency key is in progress"
-                            )
-                        return key_record.order, False
-
-                    order = OrderService._create_order(
-                        payload, request_user, request_meta
-                    )
-                    key_record.order = order
-                    key_record.save(update_fields=["order", "updated_at"])
-                    return order, True
-            except IntegrityError:
-                # A concurrent request claimed the key first. Fetch the
-                # winner and return its order.
-                winner = IdempotencyKey.objects.get(key_hash=key_hash, user=request_user)
-                if winner.request_hash != request_hash:
+            if not key_created:
+                if key_record.request_hash != request_hash:
                     raise ConflictError(
                         "Idempotency key reused with a different payload"
-                    ) from None
-                if winner.order_id is None:
+                    )
+                if key_record.order_id is None:
+                    # A request is in flight but the order does not exist
+                    # yet. Return the key so the caller can retry after a
+                    # short delay.
                     raise ConflictError(
                         "Request with this idempotency key is in progress"
-                    ) from None
-                return winner.order, False
+                    )
+                return key_record.order, False
+
+            order = OrderService._create_order(
+                payload, request_user, request_meta
+            )
+            key_record.order = order
+            key_record.save(update_fields=["order", "updated_at"])
+            return order, True
 
         order = OrderService._create_order(payload, request_user, request_meta)
         return order, True
@@ -179,9 +174,55 @@ class OrderService:
 
     @staticmethod
     @transaction.atomic
+    def transition_order(
+        order: Order,
+        new_status: str,
+        request_user,
+        notes: str | None = None,
+        force: bool = False,
+    ) -> Order:
+        """Transition an order to a new status, enforcing the state machine.
+
+        Rejects transitions not in ORDER_STATUS_TRANSITIONS with a 409
+        ConflictError unless force is True (staff override). Records an
+        OrderHistory entry for every transition.
+        """
+        if new_status == order.status:
+            return order
+        allowed = ORDER_STATUS_TRANSITIONS.get(order.status, set())
+        if not force and new_status not in allowed:
+            message = (
+                f"Order cannot transition from {order.status} to {new_status}"
+            )
+            raise ConflictError(message)
+        old_status = order.status
+        order.status = new_status
+        order.updated_by = request_user
+        order.save(update_fields=["status", "updated_by", "updated_at"])
+        OrderHistory.objects.create(
+            order=order,
+            status=new_status,
+            old_status=old_status,
+            notes=notes,
+            created_by=request_user,
+        )
+        return order
+
+    @staticmethod
+    @transaction.atomic
     def update_order(order: Order, payload: OrderUpdateSchema, request_user) -> Order:
         OrderService.assert_editable(order)
-        for field, value in payload.dict(exclude_unset=True).items():
+        updates = payload.dict(exclude_unset=True)
+        new_status = updates.pop("status", None)
+        if new_status is not None and new_status != order.status:
+            OrderService.transition_order(
+                order,
+                new_status,
+                request_user,
+                notes="Status updated via order update",
+                force=request_user.is_staff,
+            )
+        for field, value in updates.items():
             setattr(order, field, value)
         order.updated_by = request_user
         order.save()
@@ -242,24 +283,24 @@ class OrderService:
     @staticmethod
     @transaction.atomic
     def submit_order(order: Order, request_user) -> Order:
-        if order.status != OrderStatus.DRAFT:
-            raise ValidationError("Only draft orders can be submitted")
         if not order.items.exists():
             raise ValidationError("Order must have at least one item")
-        order.status = OrderStatus.PENDING
-        order.updated_by = request_user
-        order.save()
-        return order
+        return OrderService.transition_order(
+            order,
+            OrderStatus.PENDING,
+            request_user,
+            notes="Order submitted",
+        )
 
     @staticmethod
     @transaction.atomic
     def cancel_order(order: Order, request_user) -> Order:
-        if order.status not in [OrderStatus.PENDING, OrderStatus.PARTIALLY_SHIPPED]:
-            raise ValidationError("Order cannot be cancelled in its current status")
-        order.status = OrderStatus.CANCELLED
-        order.updated_by = request_user
-        order.save()
-        return order
+        return OrderService.transition_order(
+            order,
+            OrderStatus.CANCELLED,
+            request_user,
+            notes="Order cancelled",
+        )
 
     @staticmethod
     def delete_order(order: Order) -> None:

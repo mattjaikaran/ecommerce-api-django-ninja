@@ -17,6 +17,61 @@ class OrderStatus(models.TextChoices):
     EXPIRED = "expired", "Expired"
 
 
+# Allowed order status transitions, keyed by current status. The state
+# machine is enforced in OrderService.transition_order; staff may force a
+# transition with force=True, which bypasses this map but still records
+# history.
+ORDER_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    OrderStatus.DRAFT: {OrderStatus.PENDING},
+    OrderStatus.PENDING: {
+        OrderStatus.PAID,
+        OrderStatus.SHIPPED,
+        OrderStatus.PARTIALLY_SHIPPED,
+        OrderStatus.CANCELLED,
+        OrderStatus.EXPIRED,
+        OrderStatus.FAILED,
+    },
+    OrderStatus.PAID: {
+        OrderStatus.PROCESSING,
+        OrderStatus.REFUNDED,
+        OrderStatus.PARTIALLY_REFUNDED,
+    },
+    OrderStatus.PROCESSING: {
+        OrderStatus.SHIPPED,
+        OrderStatus.PARTIALLY_SHIPPED,
+        OrderStatus.CANCELLED,
+    },
+    OrderStatus.PARTIALLY_SHIPPED: {
+        OrderStatus.SHIPPED,
+        OrderStatus.DELIVERED,
+        OrderStatus.PENDING,
+        OrderStatus.CANCELLED,
+    },
+    OrderStatus.SHIPPED: {
+        OrderStatus.DELIVERED,
+        OrderStatus.PARTIALLY_SHIPPED,
+        OrderStatus.PENDING,
+        OrderStatus.REFUNDED,
+        OrderStatus.PARTIALLY_REFUNDED,
+    },
+    OrderStatus.DELIVERED: {
+        OrderStatus.COMPLETED,
+        OrderStatus.REFUNDED,
+        OrderStatus.PARTIALLY_REFUNDED,
+    },
+    OrderStatus.COMPLETED: {
+        OrderStatus.REFUNDED,
+        OrderStatus.PARTIALLY_REFUNDED,
+    },
+    # Terminal states
+    OrderStatus.CANCELLED: set(),
+    OrderStatus.REFUNDED: set(),
+    OrderStatus.PARTIALLY_REFUNDED: set(),
+    OrderStatus.FAILED: set(),
+    OrderStatus.EXPIRED: set(),
+}
+
+
 class PaymentStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     AUTHORIZED = "authorized", "Authorized"

@@ -505,7 +505,7 @@ class TestOrderServiceSubmitOrder:
         order = ConfirmedOrderFactory()
         OrderLineItemFactory(order=order)
 
-        with pytest.raises(ValidationError, match="Only draft orders"):
+        with pytest.raises(ConflictError, match="cannot transition"):
             OrderService.submit_order(order, user)
 
     def test_submit_cancelled_order_raises(self):
@@ -513,8 +513,9 @@ class TestOrderServiceSubmitOrder:
         order = CancelledOrderFactory()
         OrderLineItemFactory(order=order)
 
-        with pytest.raises(ValidationError, match="Only draft orders"):
+        with pytest.raises(ConflictError, match="cannot transition"):
             OrderService.submit_order(order, user)
+
 
 
 class TestOrderServiceCancelOrder:
@@ -539,21 +540,21 @@ class TestOrderServiceCancelOrder:
         user = UserFactory()
         order = DraftOrderFactory()
 
-        with pytest.raises(ValidationError, match="cannot be cancelled"):
+        with pytest.raises(ConflictError, match="cannot transition"):
             OrderService.cancel_order(order, user)
 
     def test_cancel_shipped_order_raises(self):
         user = UserFactory()
         order = ShippedOrderFactory()
 
-        with pytest.raises(ValidationError, match="cannot be cancelled"):
+        with pytest.raises(ConflictError, match="cannot transition"):
             OrderService.cancel_order(order, user)
 
     def test_cancel_delivered_order_raises(self):
         user = UserFactory()
         order = DeliveredOrderFactory()
 
-        with pytest.raises(ValidationError, match="cannot be cancelled"):
+        with pytest.raises(ConflictError, match="cannot transition"):
             OrderService.cancel_order(order, user)
 
 
@@ -587,3 +588,84 @@ class TestOrderServiceDeleteOrder:
 
         with pytest.raises(ValidationError, match="cannot be updated"):
             OrderService.delete_order(order)
+
+
+class TestOrderStateMachine:
+    """Tests for the formal order status state machine."""
+
+    def test_valid_transition_records_history(self):
+        user = UserFactory()
+        order = DraftOrderFactory()
+        OrderLineItemFactory(order=order)
+
+        OrderService.submit_order(order, user)
+
+        order.refresh_from_db()
+        assert order.status == OrderStatus.PENDING
+        history = order.history.first()
+        assert history.status == OrderStatus.PENDING
+        assert history.old_status == OrderStatus.DRAFT
+        assert history.created_by == user
+
+    def test_invalid_transition_raises_conflict(self):
+        user = UserFactory()
+        order = DeliveredOrderFactory()
+
+        with pytest.raises(ConflictError, match="cannot transition"):
+            OrderService.transition_order(
+                order, OrderStatus.PENDING, user, notes="test"
+            )
+
+    def test_staff_can_force_transition(self):
+        user = UserFactory()
+        order = DeliveredOrderFactory()
+
+        OrderService.transition_order(
+            order, OrderStatus.PENDING, user, notes="override", force=True
+        )
+
+        order.refresh_from_db()
+        assert order.status == OrderStatus.PENDING
+        history = order.history.first()
+        assert history.status == OrderStatus.PENDING
+        assert history.old_status == OrderStatus.DELIVERED
+
+    def test_same_status_transition_is_noop(self):
+        user = UserFactory()
+        order = DraftOrderFactory()
+
+        result = OrderService.transition_order(
+            order, OrderStatus.DRAFT, user, notes="noop"
+        )
+
+        assert result.status == OrderStatus.DRAFT
+        assert order.history.count() == 0
+
+    def test_full_fulfillment_flow(self):
+        user = UserFactory()
+        order = DraftOrderFactory()
+        OrderLineItemFactory(order=order)
+
+        OrderService.submit_order(order, user)  # DRAFT -> PENDING
+        OrderService.transition_order(order, OrderStatus.PAID, user)  # PENDING -> PAID
+        OrderService.transition_order(
+            order, OrderStatus.PROCESSING, user
+        )  # PAID -> PROCESSING
+        OrderService.transition_order(order, OrderStatus.SHIPPED, user)  # -> SHIPPED
+        OrderService.transition_order(
+            order, OrderStatus.DELIVERED, user
+        )  # -> DELIVERED
+        OrderService.transition_order(
+            order, OrderStatus.COMPLETED, user
+        )  # -> COMPLETED
+
+        order.refresh_from_db()
+        assert order.status == OrderStatus.COMPLETED
+        assert order.history.count() == 6
+
+    def test_cancelled_order_is_terminal(self):
+        user = UserFactory()
+        order = OrderFactory(status=OrderStatus.CANCELLED)
+
+        with pytest.raises(ConflictError, match="cannot transition"):
+            OrderService.transition_order(order, OrderStatus.PENDING, user)

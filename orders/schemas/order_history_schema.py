@@ -8,6 +8,7 @@ class OrderHistorySchema(Schema):
     id: UUID
     order_id: UUID
     status: str
+    old_status: str | None = None
     notes: str = ""
     created_at: datetime
     updated_at: datetime

@@ -8,6 +8,7 @@ from pydantic import Field, validator
 from orders.models import OrderStatus, PaymentMethod, PaymentStatus, ShippingMethod
 
 from .fulfillment_schema import FulfillmentOrderSchema
+from .order_history_schema import OrderHistorySchema
 from .order_line_item_schema import OrderLineItemSchema
 from .payment_schema import PaymentTransactionSchema
 from .refund_schema import RefundSchema
@@ -48,7 +49,7 @@ class OrderSchema(Schema):
     refunds: list[RefundSchema]
     taxes: list[TaxSchema]
     notes: list[dict]
-    history: list[dict]
+    history: list[OrderHistorySchema]
     created_at: datetime
     updated_at: datetime
 

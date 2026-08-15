@@ -26,6 +26,8 @@ from orders.schemas import (
     RefundUpdateSchema,
 )
 
+from orders.services import OrderService
+
 
 @api_controller("/payments", tags=["Order Payments"])
 class PaymentController:
@@ -196,11 +198,21 @@ class PaymentController:
         # Update order payment status
         if total_refunded + payload.amount == order.total:
             order.payment_status = PaymentStatus.REFUNDED
-            order.status = OrderStatus.REFUNDED
+            OrderService.transition_order(
+                order,
+                OrderStatus.REFUNDED,
+                request.user,
+                notes="Full refund issued",
+            )
         else:
             order.payment_status = PaymentStatus.PARTIALLY_REFUNDED
-            order.status = OrderStatus.PARTIALLY_REFUNDED
-        order.save()
+            OrderService.transition_order(
+                order,
+                OrderStatus.PARTIALLY_REFUNDED,
+                request.user,
+                notes="Partial refund issued",
+            )
+        order.save(update_fields=["payment_status", "updated_at"])
 
         return 201, refund
 

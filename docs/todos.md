@@ -35,12 +35,14 @@ deprecation policy. Not part of the current plan.
   - Daily Celery cleanup task for expired keys
   - Also fixed: order create now generates `order_number` (was empty and
     unique-constrained), and non-staff users must own the customer
-- [ ] Formal order state machine
-  - Define allowed transitions per status in `orders/models/choices.py`
-  - Enforce transitions in OrderService, not controllers
-  - Reject invalid transitions with 409
-  - Record every transition in order history
-  - Tests: happy path, invalid jump, staff override, history entries
+- [x] Formal order state machine
+  - `ORDER_STATUS_TRANSITIONS` map in `orders/models/choices.py`
+  - `OrderService.transition_order` enforces it; invalid jumps raise 409
+  - Staff may force transitions (bypass map, still recorded in history)
+  - Every transition writes an `OrderHistory` row (old + new status)
+  - submit/cancel/update, fulfillment create/update/delete/ship/cancel,
+    and refund paths all route through the machine
+  - `OrderSchema.history` now serializes `OrderHistorySchema`
 
 ### Theme C — New commerce features
 
