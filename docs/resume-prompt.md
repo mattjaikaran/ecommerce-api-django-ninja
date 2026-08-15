@@ -65,10 +65,10 @@ Paste this at the start of a new session to restore full context.
 | Settings | `api/settings/common.py`, `dev.py`, `prod.py` |
 | URL routing | `api/urls.py` |
 | Installed apps | `api/settings/common.py` → `INSTALLED_APPS` |
-| Payments app | `payments/` (currently commented out) |
-| Analytics app | `analytics/` (no migrations, no tests) |
-| Celery tasks | `core/tasks.py` (82 lines, near empty) |
+| Payments app | `payments/` (enabled, Stripe webhooks) |
+| Analytics app | `analytics/` (models, controllers, seed command; aggregation tasks untested) |
+| Celery tasks | per-app `tasks.py` (core, products, cart, orders, payments, analytics, outbound_webhooks) |
 | Decorators | `api/decorators.py` |
-| RBAC | `api/rbac_permissions.py` |
+| RBAC | `api/permissions.py` (permission classes; `rbac_permissions.py` is dead code) |
 | Full backlog | `docs/todos.md` |
 | Boilerplate ref | `~/dev/django-ninja-boilerplate` |
