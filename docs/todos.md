@@ -128,14 +128,15 @@ targets live paths only.
   - Live equivalents: `search_and_filter`, `paginate_response`,
     `require_permissions` in `api/decorators.py`
   - Confirm nothing references them; update `docs/resume-prompt.md`
-- [ ] Coverage push 58% -> 80%+
+- [ ] Coverage push 61% -> 80%+
   - RBAC permission classes in `api/permissions.py` (19%)
-  - Live search/filter and pagination paths in `api/decorators.py` (67%)
+  - Live search/filter and pagination paths in `api/decorators.py` (65%)
   - Cache system: `core/cache/*` versioning, warming, signals, preload (0%)
   - Celery tasks and DLQ retry path in every app (0%)
   - Controllers: refund (0%), inventory (0%), price (0%), cart_item (43%),
     analytics sales report (50%)
-  - Health checks: `api/healthcheck.py` (20%)
+  - Health checks: `api/healthcheck.py` (70% — probes from Theme D; the
+    remaining gap is the monitoring/summary paths)
   - Email service: `core/services/email/*` (0%)
   - Analytics: `generate_analytics` command (0%), `analytics/tasks.py` (0%),
     controller tests for sales reports
