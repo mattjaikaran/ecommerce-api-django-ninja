@@ -127,6 +127,7 @@ class TestProductController:
             "description": "Updated description",
             "category_id": str(category.id),
             "price": "149.99",
+            "compare_at_price": "159.99",
         }
 
         response = self.client.put(
@@ -169,15 +170,19 @@ class TestProductController:
 
     def test_search_products(self):
         """Test searching products by name."""
-        ProductFactory(name="Smartphone Case")
-        ProductFactory(name="Phone Charger")
-        ProductFactory(name="Laptop Stand")
+        ProductFactory(name="Wireless Phone Case", description="Protective phone case")
+        ProductFactory(name="Phone Charger", description="Fast charging cable")
+        ProductFactory(name="Laptop Stand", description="Ergonomic desk accessory")
 
         response = self.client.get("/api/products?search=phone")
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) >= 2  # Should match "Smartphone" and "Phone"
+        # Full-text search is token-based: matches "Wireless Phone Case" and
+        # "Phone Charger" by name but not "Laptop Stand".
+        names = [item["name"] for item in data]
+        assert len(data) >= 2
+        assert "Laptop Stand" not in names
 
     def test_product_ordering(self):
         """Test ordering products."""

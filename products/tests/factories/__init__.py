@@ -7,6 +7,7 @@ from .product_factory import (
     ProductFactory,
     PublishedProductFactory,
 )
+from .product_tag_factory import ProductTagFactory
 from .product_variant_factory import (
     InStockVariantFactory,
     LowStockVariantFactory,
@@ -22,6 +23,7 @@ __all__ = [
     "OutOfStockVariantFactory",
     "ProductCategoryFactory",
     "ProductFactory",
+    "ProductTagFactory",
     "ProductVariantFactory",
     "PublishedProductFactory",
     "SubCategoryFactory",

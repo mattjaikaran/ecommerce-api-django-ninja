@@ -7,6 +7,7 @@ from django.db import models, transaction
 from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
+from api.config.constants import MIN_SEARCH_QUERY_LENGTH
 from api.decorators import (
     admin_endpoint,
     create_endpoint,
@@ -29,6 +30,7 @@ from products.schemas import (
     ProductVariantSchema,
     ProductVariantUpdateSchema,
 )
+from products.services import ProductService
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,6 @@ class ProductController:
             "attributes",
             "reviews",
         ],
-        search_fields=["name", "description", "slug"],
         filter_fields={
             "category_id": "exact",
             "status": "exact",
@@ -67,7 +68,6 @@ class ProductController:
         ],
     )
     @search_and_filter(
-        search_fields=["name", "description", "slug"],
         filter_fields={
             "category_id": "exact",
             "status": "exact",
@@ -78,7 +78,19 @@ class ProductController:
         ordering_fields=["name", "price", "created_at", "featured"],
     )
     def list_products(self, request):
-        """Get all products with advanced filtering and optimization."""
+        """List active products with filters, ordering, and weighted full-text search.
+
+        When the ``search`` query parameter holds a term of at least
+        MIN_SEARCH_QUERY_LENGTH characters, results come from
+        ProductService.search_products: full-text search across the name
+        (weight A), description (weight B), and tags (weight C), ranked by
+        relevance so phrase and near matches outrank keyword-only matches.
+        An explicit ``ordering`` parameter overrides the rank order.
+        Without a search term, the endpoint returns all active products.
+        """
+        search_query = (request.GET.get("search") or "").strip()
+        if len(search_query) >= MIN_SEARCH_QUERY_LENGTH:
+            return 200, ProductService.search_products(search_query)
         return 200, Product.objects.filter(is_active=True)
 
     @http_get("/{product_id}", response={200: ProductSchema, 400: dict, 401: dict, 403: dict, 404: dict})
