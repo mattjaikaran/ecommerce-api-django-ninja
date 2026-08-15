@@ -111,11 +111,13 @@ LOGGING["loggers"].update(
     {
         "django": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "DEBUG",
             "propagate": False,
         },
         "django.request": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "DEBUG",
             "propagate": False,
         },

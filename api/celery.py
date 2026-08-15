@@ -4,7 +4,9 @@ import logging
 import os
 
 from celery import Celery
-from celery.signals import task_failure
+from celery.signals import task_failure, task_postrun, task_prerun
+
+from api.middleware.request_id import request_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,21 @@ app.conf.beat_schedule = {
 }
 
 app.conf.timezone = "UTC"
+
+
+@task_prerun.connect
+def restore_request_id(sender=None, task=None, **_):  # noqa: ARG001
+    """Restore the originating request id into the worker context."""
+    headers = getattr(getattr(task, "request", None), "headers", None) or {}
+    request_id = headers.get("x_request_id")
+    if request_id:
+        request_id_var.set(request_id)
+
+
+@task_postrun.connect
+def clear_request_id(**kwargs):  # noqa: ARG001
+    """Clear the request id so stale values never leak across tasks."""
+    request_id_var.set("")
 
 
 @task_failure.connect

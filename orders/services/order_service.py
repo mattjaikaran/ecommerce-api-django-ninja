@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from api.config.constants import IDEMPOTENCY_KEY_TTL_HOURS
 from api.exceptions import ConflictError, NotFoundError, ValidationError
+from api.middleware.request_id import get_request_id
 from core.models import Customer
 from loyalty.tasks import credit_order_points
 from orders.models import (
@@ -208,7 +209,9 @@ class OrderService:
             created_by=request_user,
         )
         if new_status == OrderStatus.COMPLETED:
-            credit_order_points.delay(order.id)
+            request_id = get_request_id()
+            headers = {"x_request_id": request_id} if request_id else {}
+            credit_order_points.apply_async(args=[order.id], headers=headers)
         return order
 
     @staticmethod

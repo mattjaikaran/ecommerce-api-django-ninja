@@ -102,8 +102,8 @@ LOGGING["handlers"].update(
         "file": {
             "level": "INFO",
             "class": "logging.FileHandler",
-            "filename": "/app/logs/django.log",
             "formatter": "json",
+            "filters": ["request_id"],
         },
     }
 )

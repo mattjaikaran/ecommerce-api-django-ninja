@@ -100,6 +100,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "api.middleware.request_id.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",  # security middleware
     "django.contrib.sessions.middleware.SessionMiddleware",  # session middleware
     "corsheaders.middleware.CorsMiddleware",  # django-cors-headers
@@ -318,7 +319,7 @@ LOGGING = {
             "style": "{",
         },
         "simple": {
-            "format": "{levelname} {message}",
+            "format": "{levelname} {request_id} {message}",
             "style": "{",
         },
         "json": {
@@ -331,89 +332,122 @@ LOGGING = {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
             "formatter": "simple",
+            "filters": ["request_id"],
         },
         "console_json": {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
             "formatter": "json",
+            "filters": ["request_id"],
+        },
+    },
+    "filters": {
+        "request_id": {
+            "()": "api.middleware.request_id.RequestIdLogFilter",
         },
     },
     "loggers": {
         "django.db.backends": {
             "level": "INFO",
             "handlers": ["console"],
+            "filters": ["request_id"],
             "propagate": False,
         },
         "import_export": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "core": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "core.schemas": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "core.controllers": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "celery": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "orders": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "cart": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "products": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "analytics": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "payments": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "outbound_webhooks": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "feature_flags": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "gift_cards": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
         "subscriptions": {
             "handlers": ["console"],
+            "filters": ["request_id"],
             "level": "INFO",
             "propagate": False,
         },
+        "api.decorators": {
+            "filters": ["request_id"],
+            "propagate": True,
+        },
+        "loyalty.tasks": {
+            "filters": ["request_id"],
+            "propagate": True,
+        },
+    },
+    "root": {
+        "filters": ["request_id"],
     },
 }
 

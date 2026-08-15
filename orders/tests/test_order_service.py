@@ -668,7 +668,7 @@ class TestOrderStateMachine:
         order.refresh_from_db()
         assert order.status == OrderStatus.COMPLETED
         assert order.history.count() == 6
-        mock_task.delay.assert_called_once_with(order.id)
+        mock_task.apply_async.assert_called_once_with(args=[order.id], headers={})
 
     def test_non_completed_transition_does_not_enqueue_loyalty_task(self, monkeypatch):
         user = UserFactory()
@@ -683,7 +683,7 @@ class TestOrderStateMachine:
 
         order.refresh_from_db()
         assert order.status == OrderStatus.PENDING
-        mock_task.delay.assert_not_called()
+        mock_task.apply_async.assert_not_called()
 
     def test_cancelled_order_is_terminal(self):
         user = UserFactory()
