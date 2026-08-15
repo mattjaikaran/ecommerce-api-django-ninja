@@ -8,6 +8,7 @@ from .fulfillment_admin import (
     OrderFulfillmentTrackingUrlAdmin,
 )
 from .history_admin import OrderHistoryAdmin
+from .idempotency_key_admin import IdempotencyKeyAdmin
 from .note_admin import OrderNoteAdmin
 from .order_admin import OrderAdmin
 from .order_line_item_admin import OrderLineItemAdmin
@@ -32,4 +33,5 @@ __all__ = [
     OrderNoteAdmin,
     OrderHistoryAdmin,
     OrderDiscountAdmin,
+    IdempotencyKeyAdmin,
 ]

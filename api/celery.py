@@ -30,6 +30,10 @@ app.conf.beat_schedule = {
         "task": "cart.tasks.cleanup_expired_carts",
         "schedule": 3600.0,  # hourly
     },
+    "cleanup-expired-idempotency-keys": {
+        "task": "orders.tasks.cleanup_expired_idempotency_keys",
+        "schedule": 86400.0,  # daily
+    },
     "send-abandoned-cart-emails": {
         "task": "cart.tasks.send_abandoned_cart_emails",
         "schedule": 3600.0,  # hourly — checks carts idle for 2+ hours

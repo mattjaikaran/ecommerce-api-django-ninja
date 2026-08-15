@@ -3,7 +3,6 @@
 import logging
 
 from django.shortcuts import get_object_or_404
-from ninja_extra.pagination import PaginatedResponseSchema, paginate
 from ninja.security import django_auth
 from ninja_extra import (
     api_controller,
@@ -12,6 +11,7 @@ from ninja_extra import (
     http_post,
     http_put,
 )
+from ninja_extra.pagination import PaginatedResponseSchema, paginate
 from ninja_jwt.authentication import JWTAuth
 
 from api.decorators import (
@@ -84,11 +84,14 @@ class OrderController:
         order = get_object_or_404(Order, **kwargs)
         return 200, order
 
-    @http_post("", response={201: OrderSchema, 400: dict, 401: dict, 403: dict, 404: dict, 409: dict})
+    @http_post("", response={200: OrderSchema, 201: OrderSchema, 400: dict, 401: dict, 403: dict, 404: dict, 409: dict})
     @create_endpoint()
     def create_order(self, request, payload: OrderCreateSchema):
-        order = OrderService.create_order(payload, request.user, request.META)
-        return 201, order
+        idempotency_key = request.headers.get("Idempotency-Key")
+        order, created = OrderService.create_order(
+            payload, request.user, request.META, idempotency_key
+        )
+        return (201 if created else 200), order
 
     @http_put("/{order_id}", response={200: OrderSchema, 400: dict, 401: dict, 403: dict, 404: dict})
     @update_endpoint()

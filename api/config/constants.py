@@ -153,6 +153,9 @@ RATE_LIMIT_PER_HOUR = 1000
 RATE_LIMIT_PER_DAY = 10000
 RATE_LIMIT_BURST = 10
 
+# Idempotency Configuration
+IDEMPOTENCY_KEY_TTL_HOURS = 24  # idempotency keys expire after 24 hours
+
 # Search Configuration
 SEARCH_RESULTS_PER_PAGE = 20
 MAX_SEARCH_RESULTS = 1000

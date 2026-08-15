@@ -50,3 +50,20 @@ def send_order_confirmation_email(self, order_id: str) -> None:
     except Exception as exc:
         logger.exception("order confirmation failed", extra={"order_id": order_id})
         raise self.retry(exc=exc) from exc
+
+
+@shared_task(bind=True, ignore_result=True, name="orders.tasks.cleanup_expired_idempotency_keys")
+def cleanup_expired_idempotency_keys(self) -> str:
+    """Delete idempotency keys that have expired."""
+    from django.utils import timezone
+
+    from orders.models import IdempotencyKey
+
+    try:
+        count, _ = IdempotencyKey.objects.filter(expires_at__lt=timezone.now()).delete()
+    except Exception as exc:
+        logger.exception("idempotency key cleanup failed")
+        raise self.retry(exc=exc, countdown=60, max_retries=3) from exc
+    else:
+        logger.info("expired idempotency keys cleaned", extra={"count": count})
+        return f"Deleted {count} expired idempotency keys"

@@ -1,22 +1,135 @@
 """Business logic for order management."""
 
+import hashlib
 import logging
+import uuid
+from datetime import timedelta
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 
-from api.exceptions import ValidationError
-from orders.models import Order, OrderLineItem, OrderStatus
-from orders.schemas import OrderCreateSchema, OrderLineItemCreateSchema, OrderLineItemUpdateSchema, OrderUpdateSchema
+from api.config.constants import IDEMPOTENCY_KEY_TTL_HOURS
+from api.exceptions import ConflictError, NotFoundError, ValidationError
+from core.models import Customer
+from orders.models import IdempotencyKey, Order, OrderLineItem, OrderStatus
+from orders.schemas import (
+    OrderCreateSchema,
+    OrderLineItemCreateSchema,
+    OrderLineItemUpdateSchema,
+    OrderUpdateSchema,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class OrderService:
     @staticmethod
+    def _hash_idempotency_key(key: str) -> str:
+        """Return the SHA-256 hash of an idempotency key."""
+        return hashlib.sha256(key.encode()).hexdigest()
+
+    @staticmethod
+    def _hash_request_payload(payload: OrderCreateSchema) -> str:
+        """Return a canonical hash of the request payload."""
+        return hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+
+    @staticmethod
+    def _assert_customer_owned(payload: OrderCreateSchema, request_user) -> None:
+        """Raise 404 unless the customer belongs to the request user (or staff)."""
+        if request_user.is_staff:
+            return
+        owned = Customer.objects.filter(id=payload.customer_id, user=request_user).exists()
+        if not owned:
+            raise NotFoundError("Customer not found")
+
+    @staticmethod
     @transaction.atomic
-    def create_order(payload: OrderCreateSchema, request_user, request_meta: dict) -> Order:
+    def create_order(
+        payload: OrderCreateSchema,
+        request_user,
+        request_meta: dict,
+        idempotency_key: str | None = None,
+    ) -> tuple[Order, bool]:
+        """Create an order, honoring an optional idempotency key.
+
+        Returns (order, created). When an idempotency key is supplied and
+        the same key was already used with the same payload, the original
+        order is returned with created=False. Reusing a key with a
+        different payload raises ConflictError.
+        """
+        OrderService._assert_customer_owned(payload, request_user)
+
+        if idempotency_key:
+            key_hash = OrderService._hash_idempotency_key(idempotency_key)
+            request_hash = OrderService._hash_request_payload(payload)
+
+            try:
+                with transaction.atomic():
+                    # An expired claim is reusable: drop it before claiming.
+                    IdempotencyKey.objects.filter(
+                        key_hash=key_hash,
+                        user=request_user,
+                        expires_at__lte=timezone.now(),
+                    ).delete()
+
+                    key_record, key_created = IdempotencyKey.objects.get_or_create(
+                        key_hash=key_hash,
+                        user=request_user,
+                        defaults={
+                            "request_hash": request_hash,
+                            "expires_at": timezone.now()
+                            + timedelta(hours=IDEMPOTENCY_KEY_TTL_HOURS),
+                        },
+                    )
+
+                    if not key_created:
+                        if key_record.request_hash != request_hash:
+                            raise ConflictError(
+                                "Idempotency key reused with a different payload"
+                            )
+                        if key_record.order_id is None:
+                            # A request is in flight but the order does not
+                            # exist yet. Return the key so the caller can
+                            # retry after a short delay.
+                            raise ConflictError(
+                                "Request with this idempotency key is in progress"
+                            )
+                        return key_record.order, False
+
+                    order = OrderService._create_order(
+                        payload, request_user, request_meta
+                    )
+                    key_record.order = order
+                    key_record.save(update_fields=["order", "updated_at"])
+                    return order, True
+            except IntegrityError:
+                # A concurrent request claimed the key first. Fetch the
+                # winner and return its order.
+                winner = IdempotencyKey.objects.get(key_hash=key_hash, user=request_user)
+                if winner.request_hash != request_hash:
+                    raise ConflictError(
+                        "Idempotency key reused with a different payload"
+                    ) from None
+                if winner.order_id is None:
+                    raise ConflictError(
+                        "Request with this idempotency key is in progress"
+                    ) from None
+                return winner.order, False
+
+        order = OrderService._create_order(payload, request_user, request_meta)
+        return order, True
+
+    @staticmethod
+    def _generate_order_number() -> str:
+        """Return a unique, human-readable order number."""
+        date_part = timezone.now().strftime("%Y%m%d")
+        return f"ORD-{date_part}-{uuid.uuid4().hex[:8].upper()}"
+
+    @staticmethod
+    def _create_order(payload: OrderCreateSchema, request_user, request_meta: dict) -> Order:
         order = Order.objects.create(
+            order_number=OrderService._generate_order_number(),
             customer_id=payload.customer_id,
             customer_group_id=payload.customer_group_id,
             currency=payload.currency,

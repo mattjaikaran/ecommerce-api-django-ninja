@@ -12,18 +12,21 @@ Covers all service methods:
 - delete_order
 """
 
+import hashlib
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
-from api.exceptions import ValidationError
+from api.exceptions import ConflictError, NotFoundError, ValidationError
 from core.tests.factories import (
     AddressFactory,
+    AdminUserFactory,
     CustomerFactory,
     CustomerGroupFactory,
     UserFactory,
 )
-from orders.models import Order, OrderLineItem, OrderStatus
+from orders.models import IdempotencyKey, Order, OrderLineItem, OrderStatus
 from orders.schemas import (
     OrderCreateSchema,
     OrderLineItemCreateSchema,
@@ -66,7 +69,7 @@ class TestOrderServiceCreateOrder:
         customer = CustomerFactory(user=user)
         payload = self._make_payload(customer, user)
 
-        order = OrderService.create_order(payload, user, {})
+        order, _ = OrderService.create_order(payload, user, {})
 
         assert order.pk is not None
         assert order.customer == customer
@@ -84,7 +87,7 @@ class TestOrderServiceCreateOrder:
             {"product_variant_id": str(variant.id), "quantity": 2},
         ])
 
-        order = OrderService.create_order(payload, user, {})
+        order, _ = OrderService.create_order(payload, user, {})
 
         assert order.items.count() == 1
         line = order.items.first()
@@ -104,7 +107,7 @@ class TestOrderServiceCreateOrder:
             {"product_variant_id": str(variant2.id), "quantity": 3},
         ])
 
-        order = OrderService.create_order(payload, user, {})
+        order, _ = OrderService.create_order(payload, user, {})
 
         assert order.items.count() == 2
         expected_subtotal = sum(item.total for item in order.items.all())
@@ -116,7 +119,7 @@ class TestOrderServiceCreateOrder:
         payload = self._make_payload(customer, user)
         meta = {"REMOTE_ADDR": "192.168.1.100", "HTTP_USER_AGENT": "TestAgent/1.0"}
 
-        order = OrderService.create_order(payload, user, meta)
+        order, _ = OrderService.create_order(payload, user, meta)
 
         assert order.ip_address == "192.168.1.100"
         assert order.user_agent == "TestAgent/1.0"
@@ -126,7 +129,7 @@ class TestOrderServiceCreateOrder:
         customer = CustomerFactory(user=user)
         payload = self._make_payload(customer, user)
 
-        order = OrderService.create_order(payload, user, {})
+        order, _ = OrderService.create_order(payload, user, {})
 
         assert order.created_by == user
         assert order.updated_by == user
@@ -146,9 +149,100 @@ class TestOrderServiceCreateOrder:
             items=[],
         )
 
-        order = OrderService.create_order(payload, user, {})
+        order, _ = OrderService.create_order(payload, user, {})
 
         assert order.customer_group == group
+
+    def test_create_order_requires_customer_ownership(self):
+        user = UserFactory()
+        other_user = UserFactory()
+        other_customer = CustomerFactory(user=other_user)
+        payload = self._make_payload(other_customer, other_user)
+
+        with pytest.raises(NotFoundError):
+            OrderService.create_order(payload, user, {})
+
+    def test_create_order_staff_can_use_any_customer(self):
+        admin = AdminUserFactory()
+        customer = CustomerFactory(user=UserFactory())
+        payload = self._make_payload(customer, admin)
+
+        order, created = OrderService.create_order(payload, admin, {})
+
+        assert created is True
+        assert order.customer == customer
+
+    def test_create_order_same_key_returns_same_order(self):
+        user = UserFactory()
+        customer = CustomerFactory(user=user)
+        payload = self._make_payload(customer, user)
+
+        order1, created1 = OrderService.create_order(payload, user, {}, "key-abc")
+        order2, created2 = OrderService.create_order(payload, user, {}, "key-abc")
+
+        assert created1 is True
+        assert created2 is False
+        assert order1.pk == order2.pk
+        assert Order.objects.filter(customer=customer).count() == 1
+
+    def test_create_order_different_keys_create_separate_orders(self):
+        user = UserFactory()
+        customer = CustomerFactory(user=user)
+        payload = self._make_payload(customer, user)
+
+        order1, created1 = OrderService.create_order(payload, user, {}, "key-1")
+        order2, created2 = OrderService.create_order(payload, user, {}, "key-2")
+
+        assert created1 is True
+        assert created2 is True
+        assert order1.pk != order2.pk
+        assert Order.objects.filter(customer=customer).count() == 2
+
+    def test_create_order_key_scoped_per_user(self):
+        user1 = UserFactory()
+        user2 = UserFactory()
+        customer1 = CustomerFactory(user=user1)
+        customer2 = CustomerFactory(user=user2)
+        payload1 = self._make_payload(customer1, user1)
+        payload2 = self._make_payload(customer2, user2)
+
+        order1, created1 = OrderService.create_order(payload1, user1, {}, "shared-key")
+        order2, created2 = OrderService.create_order(payload2, user2, {}, "shared-key")
+
+        assert created1 is True
+        assert created2 is True
+        assert order1.pk != order2.pk
+
+    def test_create_order_key_reused_with_different_payload_conflicts(self):
+        user = UserFactory()
+        customer = CustomerFactory(user=user)
+        variant = ProductVariantFactory(price=Decimal("10.00"))
+        payload1 = self._make_payload(customer, user, items=[
+            {"product_variant_id": str(variant.id), "quantity": 1},
+        ])
+        payload2 = self._make_payload(customer, user, items=[
+            {"product_variant_id": str(variant.id), "quantity": 2},
+        ])
+
+        OrderService.create_order(payload1, user, {}, "key-conflict")
+        with pytest.raises(ConflictError):
+            OrderService.create_order(payload2, user, {}, "key-conflict")
+
+    def test_create_order_expired_key_is_reusable(self):
+        user = UserFactory()
+        customer = CustomerFactory(user=user)
+        payload = self._make_payload(customer, user)
+        key_hash = hashlib.sha256("key-expired".encode("utf-8")).hexdigest()
+
+        order1, _ = OrderService.create_order(payload, user, {}, "key-expired")
+        IdempotencyKey.objects.filter(key_hash=key_hash).update(
+            expires_at=timezone.now() - timezone.timedelta(hours=1)
+        )
+
+        order2, created2 = OrderService.create_order(payload, user, {}, "key-expired")
+
+        assert created2 is True
+        assert order1.pk != order2.pk
 
 
 class TestOrderServiceAssertEditable:

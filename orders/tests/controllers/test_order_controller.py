@@ -58,6 +58,73 @@ class TestOrderController:
         # totals are computed by the service from items, not taken from submitted data
         assert order.total > 0
 
+    def _order_payload(self):
+        billing_address = AddressFactory(user=self.user, is_billing=True)
+        shipping_address = AddressFactory(user=self.user, is_shipping=True)
+        variant = ProductVariantFactory()
+        return {
+            "customer_id": str(self.customer.id),
+            "billing_address_id": str(billing_address.id),
+            "shipping_address_id": str(shipping_address.id),
+            "email": self.user.email,
+            "items": [{"product_variant_id": str(variant.id), "quantity": 1}],
+        }
+
+    def test_create_order_with_idempotency_key_replays(self):
+        """Same key and payload returns the same order; replay returns 200."""
+        order_data = self._order_payload()
+        headers = {"HTTP_IDEMPOTENCY_KEY": "ctrl-key-1"}
+
+        first = self.client.post(
+            "/api/orders", data=order_data, content_type="application/json", **headers
+        )
+        second = self.client.post(
+            "/api/orders", data=order_data, content_type="application/json", **headers
+        )
+
+        assert first.status_code == 201
+        assert second.status_code == 200
+        assert first.json()["id"] == second.json()["id"]
+        assert Order.objects.count() == 1
+
+    def test_create_order_different_keys_create_different_orders(self):
+        order_data = self._order_payload()
+
+        first = self.client.post(
+            "/api/orders",
+            data=order_data,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="ctrl-key-a",
+        )
+        second = self.client.post(
+            "/api/orders",
+            data=order_data,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="ctrl-key-b",
+        )
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert first.json()["id"] != second.json()["id"]
+        assert Order.objects.count() == 2
+
+    def test_create_order_idempotency_conflict_on_payload_change(self):
+        """Same key with a different payload returns 409."""
+        order_data = self._order_payload()
+        headers = {"HTTP_IDEMPOTENCY_KEY": "ctrl-key-conflict"}
+
+        first = self.client.post(
+            "/api/orders", data=order_data, content_type="application/json", **headers
+        )
+        assert first.status_code == 201
+
+        order_data["items"][0]["quantity"] = 5
+        conflict = self.client.post(
+            "/api/orders", data=order_data, content_type="application/json", **headers
+        )
+
+        assert conflict.status_code == 409
+
     def test_create_order_with_line_items(self):
         """Test creating an order with line items."""
         billing_address = AddressFactory(user=self.user, is_billing=True)
@@ -256,6 +323,46 @@ class TestOrderControllerPermissions:
 
         assert str(own_order.id) in order_ids
         assert str(other_order.id) not in order_ids
+
+    def test_user_cannot_create_order_for_other_customers(self):
+        """Test that users cannot create orders using another user's customer."""
+        billing_address = AddressFactory(user=self.user, is_billing=True)
+        shipping_address = AddressFactory(user=self.user, is_shipping=True)
+        variant = ProductVariantFactory()
+        order_data = {
+            "customer_id": str(self.other_customer.id),
+            "billing_address_id": str(billing_address.id),
+            "shipping_address_id": str(shipping_address.id),
+            "email": self.user.email,
+            "items": [{"product_variant_id": str(variant.id), "quantity": 1}],
+        }
+
+        self.client.force_login(self.user)
+        response = self.client.post(
+            "/api/orders", data=order_data, content_type="application/json"
+        )
+
+        assert response.status_code == 404
+
+    def test_staff_can_create_order_for_any_customer(self):
+        """Test that staff can create orders for any customer."""
+        billing_address = AddressFactory(user=self.other_user, is_billing=True)
+        shipping_address = AddressFactory(user=self.other_user, is_shipping=True)
+        variant = ProductVariantFactory()
+        order_data = {
+            "customer_id": str(self.other_customer.id),
+            "billing_address_id": str(billing_address.id),
+            "shipping_address_id": str(shipping_address.id),
+            "email": self.other_user.email,
+            "items": [{"product_variant_id": str(variant.id), "quantity": 1}],
+        }
+
+        self.client.force_login(self.admin_user)
+        response = self.client.post(
+            "/api/orders", data=order_data, content_type="application/json"
+        )
+
+        assert response.status_code == 201
 
     def test_user_cannot_access_other_users_order(self):
         """Test that users cannot access other users' orders."""

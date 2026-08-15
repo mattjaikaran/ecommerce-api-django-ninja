@@ -26,16 +26,15 @@ visible features first, harden and test after.
 
 Senior-level API design signals. Highest portfolio value next.
 
-- [ ] API versioning
-  - Add `/api/v1/` prefix to all routes
-  - Configure versioning in `api/urls.py`
-  - Document the deprecation policy in README
-- [ ] Idempotent order creation
-  - Accept `Idempotency-Key` header on order create
-  - Replay protection: return the original order, never a duplicate
-  - Persist keys with expiry; clean up stale keys
-  - Tests: same key twice returns same order; different keys create
-    different orders; missing key still works
+Deferred to v2: API versioning with an `/api/v1/` prefix and a documented
+deprecation policy. Not part of the current plan.
+- [x] Idempotent order creation
+  - `IdempotencyKey` model: hashed key, user-scoped, request hash, 24h TTL
+  - `Idempotency-Key` header accepted on order create; replay returns the
+    original order with 200; different payload with same key returns 409
+  - Daily Celery cleanup task for expired keys
+  - Also fixed: order create now generates `order_number` (was empty and
+    unique-constrained), and non-staff users must own the customer
 - [ ] Formal order state machine
   - Define allowed transitions per status in `orders/models/choices.py`
   - Enforce transitions in OrderService, not controllers

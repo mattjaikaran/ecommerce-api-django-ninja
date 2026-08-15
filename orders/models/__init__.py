@@ -17,6 +17,7 @@ from .fulfillment import (
     OrderFulfillmentTrackingUrl,
 )
 from .history import OrderHistory
+from .idempotency_key import IdempotencyKey
 from .note import OrderNote
 from .order import Order
 from .order_line_item import OrderLineItem
@@ -50,4 +51,5 @@ __all__ = [
     OrderNote,
     OrderHistory,
     OrderDiscount,
+    IdempotencyKey,
 ]

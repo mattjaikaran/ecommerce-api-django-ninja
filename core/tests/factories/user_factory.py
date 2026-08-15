@@ -17,8 +17,8 @@ class UserFactory(factory.django.DjangoModelFactory):
 
     first_name = factory.Faker("first_name")
     last_name = factory.Faker("last_name")
-    email = factory.LazyAttribute(
-        lambda obj: f"{obj.first_name.lower()}.{obj.last_name.lower()}@example.com"
+    email = factory.LazyAttributeSequence(
+        lambda obj, n: f"{obj.first_name.lower()}.{obj.last_name.lower()}{n}@example.com"
     )
     username = factory.LazyAttribute(
         lambda obj: f"{obj.first_name.lower()}{obj.last_name.lower()}{fake.random_int(100, 999)}"
