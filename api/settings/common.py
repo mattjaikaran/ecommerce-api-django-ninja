@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     "feature_flags",  # feature flags app
     "gift_cards",  # gift cards app
     "subscriptions",  # subscriptions app
+    "wishlist",  # wishlist app
     #####
     # third party packages
     #####

@@ -11,6 +11,7 @@ from feature_flags.controllers import FeatureFlagController
 from gift_cards.controllers import GiftCardController
 from outbound_webhooks.controllers import WebhookDeliveryController, WebhookEndpointController
 from subscriptions.controllers import CustomerSubscriptionController, SubscriptionPlanController
+from wishlist.controllers import WishlistController
 from analytics.controllers import (
     CustomerAnalyticsController,
     PerformanceMetricController,
@@ -87,6 +88,7 @@ api.register_controllers(
     GiftCardController,
     SubscriptionPlanController,
     CustomerSubscriptionController,
+    WishlistController,
     SalesReportController,
     PerformanceMetricController,
     ProductAnalyticsController,
