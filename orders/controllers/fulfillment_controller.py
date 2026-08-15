@@ -24,6 +24,7 @@ from orders.schemas import (
     FulfillmentSchema,
     FulfillmentUpdateSchema,
 )
+from orders.services import OrderService
 
 
 @api_controller("/fulfillments", tags=["Order Fulfillments"])
@@ -102,8 +103,6 @@ class FulfillmentController:
             order_item.save()
 
         # Update order status if all items are fulfilled
-        from orders.services import OrderService
-
         if all(item.quantity == item.fulfilled_quantity for item in order.items.all()):
             OrderService.transition_order(
                 order,
@@ -144,8 +143,6 @@ class FulfillmentController:
         fulfillment.save()
 
         # If status is updated to SHIPPED, update order status
-        from orders.services import OrderService
-
         if payload.status == FulfillmentStatus.SHIPPED:
             order = fulfillment.order
             if all(
@@ -179,8 +176,6 @@ class FulfillmentController:
             order_item.save()
 
         # Update order status
-        from orders.services import OrderService
-
         order = fulfillment.order
         if order.status in [OrderStatus.SHIPPED, OrderStatus.PARTIALLY_SHIPPED]:
             if any(item.fulfilled_quantity > 0 for item in order.items.all()):
@@ -221,8 +216,6 @@ class FulfillmentController:
         fulfillment.save()
 
         # Update order status
-        from orders.services import OrderService
-
         order = fulfillment.order
         if all(f.status == FulfillmentStatus.SHIPPED for f in order.fulfillments.all()):
             OrderService.transition_order(
@@ -262,8 +255,6 @@ class FulfillmentController:
             order_item.save()
 
         # Update order status
-        from orders.services import OrderService
-
         order = fulfillment.order
         if any(item.fulfilled_quantity > 0 for item in order.items.all()):
             OrderService.transition_order(
