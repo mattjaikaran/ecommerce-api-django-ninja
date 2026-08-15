@@ -2,8 +2,8 @@
 
 ## Current State (verified 2026-08-15)
 
-- 340 tests pass
-- 58% coverage across 11,046 statements
+- 361 tests pass
+- 61% coverage across 11,838 statements
 - All apps enabled: core, products, cart, orders, analytics, payments,
   coupons, outbound_webhooks, feature_flags, gift_cards, subscriptions,
   wishlist, loyalty
@@ -19,8 +19,17 @@
 - Loyalty points ledger with earn-on-COMPLETED Celery task and redeem
 - Wishlist app with per-customer wishlists and idempotent add
 - N+1 query guards: order and product list query-count tests
-- Passwordless login (OTP) with rate throttling on login
 - OpenTelemetry setup gated by `OTEL_ENABLED`
+- X-Request-ID correlation: middleware accepts/generates/echoes the
+  header, a logging filter injects it into every record, and Celery task
+  headers carry it to worker logs via a `task_prerun` signal
+- Health checks cover redis PING, Celery worker liveness
+  (`control.ping`), migration drift, and SMTP; readiness gates on
+  database + redis + celery; `/health/all/` no longer permanently
+  unhealthy
+- Locust benchmark suite (`loadtests/`) with real p50/p95/p99 and error
+  rates published in the README (Apple M2 Pro, Docker Postgres 17 +
+  Redis 7.2)
 
 ## Roadmap
 
@@ -77,20 +86,35 @@ Visible features that complete the storefront story.
 
 Prove scalability with numbers.
 
-- [ ] Load tests
-  - Add locust or k6 scenario: product list, product detail, cart add,
-    checkout, order create
-  - Run against Docker stack; capture latency percentiles and error rates
-  - Publish benchmark numbers in README with hardware note
-- [ ] Request-ID middleware
-  - Generate or accept `X-Request-ID`
-  - Echo it in responses; include it in every log line
-  - Correlate Celery tasks with the originating request ID
-- [ ] Deeper health checks
-  - `api/healthcheck.py` currently 20% covered
-  - Add Redis ping, Celery worker liveness, and migration drift checks
-  - Distinguish liveness vs readiness endpoints
-  - Tests for each probe
+- [x] Load tests
+  - Locust scenario suite (`loadtests/locustfile.py`): product list,
+    product detail, cart add, checkout (create + submit), order create
+  - Ran headless against the dev stack (Docker Postgres 17 + Redis 7.2):
+    20 users, 2/s ramp, 5 min; 0.0% error rate over 3,320 requests
+  - Real p50/p95/p99 per endpoint published in the README Benchmarks
+    section with the Apple M2 Pro hardware note; `make bench` re-runs it
+- [x] Request-ID middleware
+  - `X-Request-ID` accepted, sanitized, generated (`uuid4().hex`), and
+    echoed on every response; stored on `request.request_id`
+  - `RequestIdLogFilter` injects the id into every log record (JSON and
+    console); `{request_id}` in the console format
+  - Celery correlation: `credit_order_points` dispatch carries
+    `x_request_id` in task headers; `task_prerun`/`task_postrun`
+    signals restore and clear the id in worker logs
+  - Tests: echo, generate, sanitize/cap, caplog request_id, worker
+    signal restore/clear, task log correlation (6 tests)
+- [x] Deeper health checks
+  - `api/healthcheck.py` 20% -> 70% covered
+  - Redis probe adds a direct PING; Celery liveness via
+    `control.ping(timeout=2)`; migration drift probes
+    `MigrationLoader.disk_migrations` against
+    `MigrationRecorder.applied_migrations()`; SMTP probe skips when no
+    SMTP backend is configured
+  - `skipped` services no longer flip `/health/all/` to unhealthy
+    (email/s3/stripe are skipped in dev); readiness now gates on
+    database + redis + celery; liveness stays process-alive
+  - Tests: per-probe healthy/unhealthy, `/health/`, `/readiness/` 200 +
+    503, `/liveness/`, unknown service (15 tests)
 
 ### Theme A — Production hardening and coverage
 
