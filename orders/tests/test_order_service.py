@@ -14,10 +14,12 @@ Covers all service methods:
 
 import hashlib
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 from django.utils import timezone
 
+import orders.services.order_service as order_service_module
 from api.exceptions import ConflictError, NotFoundError, ValidationError
 from core.tests.factories import (
     AddressFactory,
@@ -641,10 +643,14 @@ class TestOrderStateMachine:
         assert result.status == OrderStatus.DRAFT
         assert order.history.count() == 0
 
-    def test_full_fulfillment_flow(self):
+    def test_full_fulfillment_flow(self, monkeypatch):
         user = UserFactory()
         order = DraftOrderFactory()
         OrderLineItemFactory(order=order)
+
+        mock_task = MagicMock()
+        mock_task.delay = MagicMock()
+        monkeypatch.setattr(order_service_module, "credit_order_points", mock_task)
 
         OrderService.submit_order(order, user)  # DRAFT -> PENDING
         OrderService.transition_order(order, OrderStatus.PAID, user)  # PENDING -> PAID
@@ -662,6 +668,22 @@ class TestOrderStateMachine:
         order.refresh_from_db()
         assert order.status == OrderStatus.COMPLETED
         assert order.history.count() == 6
+        mock_task.delay.assert_called_once_with(order.id)
+
+    def test_non_completed_transition_does_not_enqueue_loyalty_task(self, monkeypatch):
+        user = UserFactory()
+        order = DraftOrderFactory()
+        OrderLineItemFactory(order=order)
+
+        mock_task = MagicMock()
+        mock_task.delay = MagicMock()
+        monkeypatch.setattr(order_service_module, "credit_order_points", mock_task)
+
+        OrderService.transition_order(order, OrderStatus.PENDING, user)
+
+        order.refresh_from_db()
+        assert order.status == OrderStatus.PENDING
+        mock_task.delay.assert_not_called()
 
     def test_cancelled_order_is_terminal(self):
         user = UserFactory()

@@ -9,6 +9,7 @@ from ninja_jwt.controller import NinjaJWTDefaultController
 from coupons.controllers import CouponController
 from feature_flags.controllers import FeatureFlagController
 from gift_cards.controllers import GiftCardController
+from loyalty.controllers import LoyaltyController
 from outbound_webhooks.controllers import WebhookDeliveryController, WebhookEndpointController
 from subscriptions.controllers import CustomerSubscriptionController, SubscriptionPlanController
 from wishlist.controllers import WishlistController
@@ -86,6 +87,7 @@ api.register_controllers(
     WebhookDeliveryController,
     FeatureFlagController,
     GiftCardController,
+    LoyaltyController,
     SubscriptionPlanController,
     CustomerSubscriptionController,
     WishlistController,

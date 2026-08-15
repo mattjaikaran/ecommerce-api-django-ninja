@@ -83,6 +83,9 @@ FULFILLMENT_STATUS_CHOICES = [
     ("exception", "Exception"),
 ]
 
+# Loyalty Configuration
+LOYALTY_POINTS_PER_DOLLAR = 10
+
 # Currency Settings
 DEFAULT_CURRENCY = "USD"
 SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY"]

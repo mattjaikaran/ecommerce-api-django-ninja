@@ -87,6 +87,7 @@ INSTALLED_APPS = [
     "outbound_webhooks",  # outbound webhooks app
     "feature_flags",  # feature flags app
     "gift_cards",  # gift cards app
+    "loyalty",  # loyalty app
     "subscriptions",  # subscriptions app
     "wishlist",  # wishlist app
     #####
@@ -285,6 +286,7 @@ CELERY_TASK_ROUTES = {
     "cart.tasks.*": {"queue": "cart"},
     "payments.tasks.*": {"queue": "payments"},
     "analytics.tasks.*": {"queue": "core"},
+    "loyalty.tasks.*": {"queue": "loyalty"},
     "outbound_webhooks.tasks.*": {"queue": "webhooks"},
 }
 

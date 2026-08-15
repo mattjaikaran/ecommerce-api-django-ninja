@@ -12,6 +12,7 @@ from django.utils import timezone
 from api.config.constants import IDEMPOTENCY_KEY_TTL_HOURS
 from api.exceptions import ConflictError, NotFoundError, ValidationError
 from core.models import Customer
+from loyalty.tasks import credit_order_points
 from orders.models import (
     IdempotencyKey,
     Order,
@@ -206,6 +207,8 @@ class OrderService:
             notes=notes,
             created_by=request_user,
         )
+        if new_status == OrderStatus.COMPLETED:
+            credit_order_points.delay(order.id)
         return order
 
     @staticmethod

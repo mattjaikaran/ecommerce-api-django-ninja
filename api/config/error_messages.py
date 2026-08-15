@@ -46,6 +46,8 @@ ERROR_MESSAGES = {
     "coupon_limit_exceeded": "Coupon usage limit exceeded.",
     "coupon_minimum_not_met": "Minimum order amount not met for this coupon.",
     "coupon_not_applicable": "This coupon is not applicable to your order.",
+    # Loyalty Errors
+    "insufficient_loyalty_points": "Insufficient loyalty points.",
     # User Account Errors
     "email_already_exists": "An account with this email already exists.",
     "username_already_exists": "This username is already taken.",
