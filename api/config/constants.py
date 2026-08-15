@@ -148,6 +148,7 @@ HEALTH_CHECK_SERVICES = [
     "stripe",
     "email",
     "celery",
+    "migrations",
 ]
 
 # Rate Limiting

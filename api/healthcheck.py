@@ -8,10 +8,15 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from celery import current_app
 from django.conf import settings
 from django.core.cache import cache
+from django.core.mail import get_connection
 from django.db import connection
+from django.db.migrations.loader import MigrationLoader
+from django.db.migrations.recorder import MigrationRecorder
 from django.http import JsonResponse
+from django_redis import get_redis_connection
 
 from .config.constants import HEALTH_CHECK_SERVICES
 
@@ -25,6 +30,9 @@ class HealthChecker:
             "redis": self._check_redis,
             "s3": self._check_s3,
             "stripe": self._check_stripe,
+            "email": self._check_email,
+            "celery": self._check_celery,
+            "migrations": self._check_migrations,
         }
 
     def check_all(self) -> dict[str, Any]:
@@ -37,6 +45,7 @@ class HealthChecker:
                 "total": len(HEALTH_CHECK_SERVICES),
                 "healthy": 0,
                 "unhealthy": 0,
+                "skipped": 0,
             },
         }
 
@@ -55,6 +64,8 @@ class HealthChecker:
 
                 if check_result["status"] == "healthy":
                     results["summary"]["healthy"] += 1
+                elif check_result["status"] == "skipped":
+                    results["summary"]["skipped"] += 1
                 else:
                     results["summary"]["unhealthy"] += 1
                     overall_healthy = False
@@ -99,24 +110,28 @@ class HealthChecker:
             }
 
     def _check_redis(self) -> dict[str, Any]:
-        """Check Redis connectivity."""
+        """Check Redis connectivity with a direct PING plus a cache round-trip."""
         try:
-            # Test cache connection
-            test_key = "healthcheck:redis:test"
-            test_value = "test_value"
-
-            cache.set(test_key, test_value, 60)
-            retrieved_value = cache.get(test_key)
-
-            if retrieved_value == test_value:
-                cache.delete(test_key)
-                return {"status": "healthy", "message": "Redis connection successful"}
-            return {
-                "status": "unhealthy",
-                "message": "Redis data integrity check failed",
-            }
+            get_redis_connection("default").ping()
         except Exception as e:
             return {"status": "unhealthy", "message": f"Redis connection failed: {e!s}"}
+        try:
+            test_key = "healthcheck:redis:test"
+            test_value = "test_value"
+            cache.set(test_key, test_value, 60)
+            retrieved_value = cache.get(test_key)
+            cache.delete(test_key)
+            if retrieved_value != test_value:
+                return {
+                    "status": "unhealthy",
+                    "message": "Redis data integrity check failed",
+                }
+        except Exception as e:
+            return {
+                "status": "unhealthy",
+                "message": f"Redis data integrity check failed: {e!s}",
+            }
+        return {"status": "healthy", "message": "Redis connection successful"}
 
     def _check_s3(self) -> dict[str, Any]:
         """Check S3 connectivity."""
@@ -154,6 +169,55 @@ class HealthChecker:
                 "message": f"Stripe connection failed: {e!s}",
             }
 
+    def _check_email(self) -> dict[str, Any]:
+        """Check SMTP connectivity; skipped when no SMTP backend is configured."""
+        backend = getattr(settings, "EMAIL_BACKEND", "")
+        if "console" in backend or "locmem" in backend:
+            return {"status": "skipped", "message": "Email backend is development-only"}
+        host = getattr(settings, "EMAIL_HOST", None)
+        if not host:
+            return {"status": "skipped", "message": "Email not configured"}
+        try:
+            smtp_connection = get_connection()
+            smtp_connection.open()
+            smtp_connection.close()
+        except Exception as e:
+            return {"status": "unhealthy", "message": f"Email connection failed: {e!s}"}
+        return {"status": "healthy", "message": "Email connection successful"}
+
+    def _check_celery(self) -> dict[str, Any]:
+        """Check Celery worker liveness via control.ping."""
+        try:
+            responses = current_app.control.ping(timeout=2)
+        except Exception as e:
+            return {"status": "unhealthy", "message": f"Celery ping failed: {e!s}"}
+        if responses:
+            return {
+                "status": "healthy",
+                "message": f"{len(responses)} worker(s) responded",
+            }
+        return {"status": "unhealthy", "message": "No Celery workers responded"}
+
+    def _check_migrations(self) -> dict[str, Any]:
+        """Check that no migrations are unapplied (drift probe)."""
+        try:
+            applied = MigrationRecorder().applied_migrations()
+            loader = MigrationLoader(connection, ignore_no_migrations=True)
+            unapplied = [
+                (app, name)
+                for (app, name) in loader.disk_migrations
+                if (app, name) not in applied
+            ]
+            if not unapplied:
+                return {"status": "healthy", "message": "All migrations applied"}
+            names = [f"{app}.{name}" for app, name in unapplied]
+            return {
+                "status": "unhealthy",
+                "message": f"Unapplied migrations: {', '.join(names)}",
+            }
+        except Exception as e:
+            return {"status": "unhealthy", "message": f"Migration check failed: {e!s}"}
+
 
 # Health check views
 
@@ -183,7 +247,7 @@ def health_check_service(request, service_name):
     checker = HealthChecker()
     result = checker.check_service(service_name)
 
-    status_code = 200 if result["status"] == "healthy" else 503
+    status_code = 200 if result["status"] in ("healthy", "skipped") else 503
     return JsonResponse({"service": service_name, **result}, status=status_code)
 
 
@@ -192,7 +256,7 @@ def readiness_check(request):
     checker = HealthChecker()
 
     # Check critical services only
-    critical_services = ["database"]
+    critical_services = ["database", "redis", "celery"]
     all_ready = True
 
     for service in critical_services:
