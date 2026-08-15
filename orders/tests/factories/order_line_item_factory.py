@@ -31,7 +31,9 @@ class OrderLineItemFactory(factory.django.DjangoModelFactory):
         lambda obj: obj.subtotal * Decimal("0.08")
     )  # 8% tax
     total = factory.LazyAttribute(
-        lambda obj: obj.subtotal + obj.tax_amount - obj.discount_amount
+        lambda obj: max(
+            obj.subtotal + obj.tax_amount - obj.discount_amount, Decimal("0.00")
+        )
     )
     tax_rate = Decimal("0.08")
     weight = factory.LazyAttribute(
